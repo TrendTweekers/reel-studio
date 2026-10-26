@@ -1,0 +1,7 @@
+# Python 3.12. Wheels exist for macOS arm64 (mediapipe is universal2) and Linux x86_64.
+numpy==1.26.4
+mediapipe==0.10.21
+faster-whisper==1.2.1
+Pillow==11.3.0
+scipy==1.15.3
+av==16.1.0

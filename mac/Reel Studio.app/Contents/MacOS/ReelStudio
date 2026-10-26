@@ -1,0 +1,50 @@
+#!/bin/bash
+# Reel Studio launcher. Starts the local server if it is not running, then opens the editor.
+APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+HOME_FILE="$APP_DIR/Contents/Resources/home.txt"
+REEL_HOME="$( [ -f "$HOME_FILE" ] && cat "$HOME_FILE" || echo "$HOME/ReelStudio")"
+URL="http://localhost:8787"
+LOG="$HOME/Library/Logs/ReelStudio.log"
+export PATH="$HOME/.local/bin:/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+unset ANTHROPIC_API_KEY
+
+alert() { osascript -e "display dialog \"$1\" with title \"Reel Studio\" buttons {\"OK\"} default button 1 with icon caution" >/dev/null 2>&1; }
+# Reel Studio answers /api/projects with a JSON list. Anything else on this port is not us.
+is_ours() { curl -sf --max-time 3 "$URL/api/projects" 2>/dev/null | grep -q '^ *\['; }
+
+if [ ! -d "$REEL_HOME" ]; then
+  alert "Reel Studio files were not found in $REEL_HOME. Ask Peter to run the installer again."
+  exit 1
+fi
+if [ ! -f "$REEL_HOME/.install-ok" ]; then
+  osascript -e "tell application \"Terminal\" to do script \"bash '$REEL_HOME/install.sh'\"" -e 'tell application "Terminal" to activate' >/dev/null
+  exit 0
+fi
+
+if ! is_ours; then
+  if lsof -ti tcp:8787 >/dev/null 2>&1; then
+    alert "Port 8787 is used by another program. Restart the Mac, then open Reel Studio again."
+    exit 1
+  fi
+  cd "$REEL_HOME" || exit 1
+  nohup caffeinate -i npm start >>"$LOG" 2>&1 &
+  for _ in $(seq 1 60); do
+    sleep 0.5
+    is_ours && break
+  done
+  if ! is_ours; then
+    alert "Reel Studio could not start. Send Peter the file ~/Library/Logs/ReelStudio.log"
+    exit 1
+  fi
+fi
+
+# Its own window (Chrome app mode) when a Chromium browser is there, else the normal browser.
+for b in "Google Chrome" "Microsoft Edge" "Brave Browser"; do
+  for d in /Applications "$HOME/Applications"; do
+    if [ -d "$d/$b.app" ]; then
+      open -na "$d/$b.app" --args --app="$URL" --window-size=1440,900
+      exit 0
+    fi
+  done
+done
+open "$URL"

@@ -1,0 +1,23 @@
+# Words the speech-to-text should know: fashion terms and brand names, one per line.
+# Claude adds words here when it fixes the same mistake twice.
+botki
+botki skarpetkowe
+torebka
+płaszcz
+sweter
+kozaki
+szpic
+obcasik
+mokasyny
+trencz
+marynarka
+kardigan
+golf
+jeansy
+spódnica midi
+stylizacja
+stylizacje
+szafa kapsułowa
+ebook
+kod rabatowy
+Paulina Lipska

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run words *)",
+      "Bash(npm run transcript *)",
+      "Bash(npm run check *)",
+      "Bash(curl -s http://localhost:8787/*)",
+      "Bash(curl -s localhost:8787/*)",
+      "Bash(curl -s -X POST localhost:8787/*)",
+      "Bash(ls *)",
+      "Bash(open projects/*)",
+      "Read",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash(open -a \"Reel Studio\")",
+      "Bash(open http://localhost:8787*)"
+    ]
+  }
+}

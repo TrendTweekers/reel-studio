@@ -1,0 +1,24 @@
+node_modules/
+projects/*
+!projects/.gitkeep
+web/dist/
+.venv/
+models/
+out/
+*.log
+.DS_Store
+styles/
+!styles/.gitkeep
+/settings.json
+board/*
+!board/.gitkeep
+assets/music/*
+!assets/music/.gitkeep
+
+# Internal notes and vendored third-party skills (installed at setup instead)
+audit/
+.claude/skills/remotion-*/
+vocabulary.local.txt
+keywords.md
+__pycache__/
+*.pyc
