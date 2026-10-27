@@ -15,6 +15,7 @@ import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { checkEdit, type Problem } from '../src/shared/check';
+import { IG_PROMPTS } from '../src/shared/igPrompts';
 import { outputDuration, outputToSource, outputWords, sourceToOutput, totalFrames } from '../src/shared/time';
 import {
   FPS,
@@ -1110,6 +1111,27 @@ tool(
     return `Saved the ${name} note.`;
   },
 );
+
+// The same ready requests as the buttons on the page, as a menu in Claude Desktop ("+" > Reel Studio).
+for (const p of IG_PROMPTS) {
+  const register = server.registerPrompt.bind(server) as unknown as (n: string, c: unknown, cb: (a: { topic?: string }) => unknown) => void;
+  register(
+    `ig-${p.id}`,
+    {
+      title: `${p.label.en} (${p.label.pl})`,
+      description: p.text.en.replace(/[: ]+$/, ''),
+      ...(p.topic ? { argsSchema: { topic: z.string().optional().describe('Your topic or text (optional)') } } : {}),
+    },
+    ({ topic }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: { type: 'text', text: `${p.text.en}${p.topic ? (topic?.trim() || '(ask me)') : ''}\n\n(Use instagram_guide with skill "${p.skill}" and follow it.)` },
+        },
+      ],
+    }),
+  );
+}
 
 const transport = new StdioServerTransport(process.stdin, mcpOut);
 await server.connect(transport);

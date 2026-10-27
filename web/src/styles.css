@@ -2868,3 +2868,42 @@ button.board-item:hover,
     grid-template-columns: 1fr;
   }
 }
+
+/* Instagram helper buttons above the Ask box */
+.ig-helpers {
+  border-top: 1px solid var(--line);
+  padding: 6px 14px 8px;
+}
+.ig-toggle {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: inherit;
+  opacity: 0.75;
+  cursor: pointer;
+}
+.ig-toggle:hover {
+  opacity: 1;
+}
+.ig-hint {
+  margin: 2px 0 6px;
+  font-size: 12px;
+}
+.ig-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.ig-chips .chip {
+  font-size: 12px;
+}

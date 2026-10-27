@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Segment, Word } from '../../src/shared/types';
 import { api, HttpError, type AskState, type FileItem } from './api';
 import { isWordKept } from './editState';
+import { IG_PROMPTS } from '../../src/shared/igPrompts';
 import { errText, fmt, useT, type Lang } from './i18n';
 
 // Activity text from the server is English. Known ones get a Polish version.
@@ -47,6 +48,33 @@ export function AskClaude({
   const [text, setText] = useState('');
   const [sendErr, setSendErr] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // The Instagram helper buttons: open or closed is remembered on this Mac.
+  const [igOpen, setIgOpen] = useState(() => {
+    try {
+      return localStorage.getItem('rs-ig-open') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const [skill, setSkill] = useState<string | undefined>();
+  const toggleIg = () =>
+    setIgOpen((o) => {
+      try {
+        localStorage.setItem('rs-ig-open', o ? '0' : '1');
+      } catch {
+        /* private window */
+      }
+      return !o;
+    });
+  const fill = (value: string, withSkill?: string) => {
+    // Fill only; she sends with Enter. A click never starts a run.
+    setText(value);
+    setSkill(withSkill);
+    setTimeout(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(value.length, value.length);
+    }, 0);
+  };
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -106,8 +134,9 @@ export function AskClaude({
     setSendErr(null);
     setSending(true);
     try {
-      await api.askSend(slug, m);
+      await api.askSend(slug, m, skill);
       setText('');
+      setSkill(undefined);
       setSt((s) => ({ ...s, running: true, activity: 'Thinking', messages: [...s.messages, { role: 'user', text: m, at: new Date().toISOString() }] }));
       onRunning(true);
     } catch (e) {
@@ -163,14 +192,7 @@ export function AskClaude({
                 <button
                   key={ex}
                   className="chip"
-                  onClick={() => {
-                    // Fill only; she sends with Enter. A click never starts a paid run.
-                    setText(ex);
-                    setTimeout(() => {
-                      input.current?.focus();
-                      input.current?.setSelectionRange(ex.length, ex.length);
-                    }, 0);
-                  }}
+                  onClick={() => fill(ex)}
                 >
                   {ex}
                 </button>
@@ -199,6 +221,25 @@ export function AskClaude({
         )}
       </div>
 
+      <div className={`ig-helpers${igOpen ? ' open' : ''}`}>
+        <button type="button" className="ig-toggle" onClick={toggleIg} aria-expanded={igOpen}>
+          <span>{t('igHelpers')}</span>
+          <span aria-hidden>{igOpen ? '▾' : '▸'}</span>
+        </button>
+        {igOpen && (
+          <>
+            <p className="ig-hint muted">{t('igHint')}</p>
+            <div className="ig-chips">
+              {IG_PROMPTS.map((p) => (
+                <button key={p.id} type="button" className="chip" disabled={st.running} onClick={() => fill(p.text[lang], p.skill)}>
+                  {p.label[lang]}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       {sendErr && <div className="msg error inline">{sendErr}</div>}
       <form
         className="ask-input"
@@ -212,7 +253,10 @@ export function AskClaude({
           rows={2}
           value={text}
           placeholder={st.running ? t('askWait') : t('askPlaceholder')}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (!e.target.value.trim()) setSkill(undefined);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();

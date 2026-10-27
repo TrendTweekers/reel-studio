@@ -1213,9 +1213,12 @@ app.post('/api/projects/:slug/ask', (req, res) => {
     res.status(409).json({ code: 'busy', error: 'Claude is still working on your last request' });
     return;
   }
+  // A helper button on the page names its skill; Claude gets the hint, her chat shows only her words.
+  const skill = String(req.body?.skill ?? '');
+  const prompt = /^ig-[a-z]+$/.test(skill) && fs.existsSync(path.join(ROOT, '.claude', 'skills', skill)) ? `${message}\n\n(Use the /${skill} skill.)` : message;
   const sessionId = chat(slug).sessionId;
   pushChat(slug, { role: 'user', text: message });
-  startAsk(slug, message, { resume: sessionId });
+  startAsk(slug, prompt, { resume: sessionId });
   res.json({ ok: true });
 });
 
