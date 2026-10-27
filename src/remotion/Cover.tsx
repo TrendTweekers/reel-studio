@@ -3,6 +3,7 @@
 // so the grid file is an exact preview of what Instagram crops.
 import React from 'react';
 import { AbsoluteFill, Img } from 'remotion';
+import { lightFilter } from './parts/Vibe';
 import { COVER_GRID, HEIGHT, WIDTH, type CoverProps } from '../shared/types';
 import { CREAM, isDark } from './color';
 import { fontFamily } from './fonts';
@@ -79,7 +80,7 @@ const Grain: React.FC = () => (
   </AbsoluteFill>
 );
 
-export const Cover: React.FC<CoverProps> = ({ cover, style, urls, face, grid }) => {
+export const Cover: React.FC<CoverProps> = ({ cover, style, light, urls, face, grid }) => {
   const hookFont = fontFamily(style.hookFont);
   const title = (cover.title ?? '').trim();
   const accent = (cover.accent ?? '').trim();
@@ -114,7 +115,7 @@ export const Cover: React.FC<CoverProps> = ({ cover, style, urls, face, grid }) 
 
   const canvas = (
     <div style={{ position: 'absolute', left: 0, top: grid ? -BAND_TOP : 0, width: WIDTH, height: HEIGHT }}>
-      <Img src={urls.frame} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+      <Img src={urls.frame} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: lightFilter(light) }} />
       {style.vibe === 'glow' ? (
         <AbsoluteFill style={{ background: 'rgba(255,240,226,0.08)', mixBlendMode: 'screen' }} />
       ) : null}

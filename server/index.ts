@@ -11,6 +11,8 @@ import { faceAt } from '../src/shared/time';
 import { SFX_NAMES } from '../src/shared/types';
 import { checkEdit } from '../src/shared/check';
 import { cutPauses, firstEdit, isFiller, summarizeFirstEdit } from './autoedit';
+import { measureLight } from './light';
+import { checkPrompt, checkVideo } from './videocheck';
 import { BUILT_IN_STYLES, applyStyle, type EditingStyle } from '../src/shared/styles';
 import { JobQueue, children, killAll, track } from './jobs';
 import { PLAIN, mapError } from './errors';
@@ -173,7 +175,7 @@ const probeDuration = (p: string) =>
 // ---- Editing styles ----
 const ownStyles = (): EditingStyle[] => listFiles(STYLES, /\.json$/).map((f) => readJson<EditingStyle | null>(path.join(STYLES, f), null)).filter((x): x is EditingStyle => !!x?.id);
 const allStyles = () => [...BUILT_IN_STYLES.map((s) => ({ ...s, own: false })), ...ownStyles().map((s) => ({ ...s, own: true }))];
-const settings = () => readJson<{ defaultStyle?: string }>(SETTINGS, {});
+const settings = () => readJson<{ defaultStyle?: string; autoCheck?: boolean }>(SETTINGS, {});
 const defaultLook = () => allStyles().find((s) => s.id === settings().defaultStyle) ?? BUILT_IN_STYLES[0];
 
 let shuttingDown = false;
@@ -233,6 +235,12 @@ const runAnalyse = async (slug: string, force: boolean) => {
         board: listFiles(BOARD, IMAGE),
         look: defaultLook(),
       });
+      // Auto light fix, measured once from her video. A failed measure just leaves it off.
+      try {
+        edit.light = { auto: true, strength: 1, fix: await measureLight(file(slug, 'proxy.mp4')) };
+      } catch (e) {
+        toolLog(slug, `\n== light measure skipped: ${(e as Error).message}\n`);
+      }
       writeEdit(slug, edit, 'auto');
       setMeta(slug, { summary: summarizeFirstEdit(edit) });
     }
@@ -286,7 +294,7 @@ const makeCutout = (slug: string) => toolJob(slug, 'cutout', 'cutout', 'Cut-out 
 const findCovers = (slug: string) => toolJob(slug, 'covers', 'cover_frames', 'Cover frames failed');
 
 // ---- Render ----
-type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean };
+type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean; check?: 'started' | 'skipped'; noCheck?: boolean };
 const renders = new Map<string, RenderJob>();
 const cancels = new Set<() => void>();
 
@@ -475,6 +483,11 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
     job.file = name;
     job.progress = 1;
     job.stage = 'Done';
+    // Claude checks the finished video before she posts it (Instagram version; she can turn it off).
+    if (variant === 'instagram' && !job.noCheck && settings().autoCheck !== false && !asks.has(slug)) {
+      job.check = 'started';
+      void startVideoCheck(slug, final, inputProps);
+    }
   } catch (e) {
     fs.rmSync(tmp, { force: true });
     if (shuttingDown) {
@@ -767,6 +780,25 @@ app.post('/api/projects/:slug/cutout', (req, res) => {
   res.json({ ok: true, already: !started, position: heavyQ.position(slug, 'cutout') || undefined });
 });
 
+// Measure the light of a reel made before the auto light fix existed (or measure again) and switch it on.
+app.post('/api/projects/:slug/light', async (req, res) => {
+  const slug = req.params.slug;
+  const edit = readJson<Edit | null>(file(slug, 'edit.json'), null);
+  if (!edit || !fs.existsSync(file(slug, 'proxy.mp4'))) {
+    res.status(409).json(BUSY);
+    return;
+  }
+  try {
+    const fix = await measureLight(file(slug, 'proxy.mp4'));
+    const fresh = readJson<Edit>(file(slug, 'edit.json'), edit);
+    fresh.light = { auto: true, strength: fresh.light?.strength ?? 1, fix };
+    writeEdit(slug, fresh, 'page', { always: true });
+    res.json({ ok: true, light: fresh.light, editVersion: editVersion(slug) });
+  } catch (e) {
+    res.status(500).json({ code: 'unknown', error: (e as Error).message });
+  }
+});
+
 app.post('/api/projects/:slug/reanalyse', (req, res) => {
   const slug = req.params.slug;
   if (meta(slug).parent) {
@@ -803,6 +835,7 @@ const makeClip = (parent: string, parentEdit: Edit, start: number, end: number, 
   edit.toggles = { ...parentEdit.toggles };
   edit.wordFixes = parentEdit.wordFixes;
   edit.styleId = parentEdit.styleId;
+  if (parentEdit.light) edit.light = { ...parentEdit.light };
   writeEdit(slug, edit, 'auto');
   setStatus(slug, { step: 'ready', progress: 1 });
   return slug;
@@ -928,6 +961,7 @@ app.post('/api/projects/:slug/covers/render', async (req, res) => {
           const inputProps: CoverProps = {
             cover,
             style: edit.style,
+            light: edit.light,
             urls: { frame: `${ORIGIN}/media/${slug}/${coverPath(frame.file).split('/').map(encodeURIComponent).join('/')}` },
             face: faces.length ? faceAt(cover.t, faces) : null,
             grid,
@@ -956,7 +990,8 @@ app.post('/api/projects/:slug/render', (req, res) => {
     res.status(409).json(BUSY);
     return;
   }
-  const job: RenderJob = { running: true, progress: 0, stage: 'Waiting', queued: true };
+  // check:false = the caller checks the video itself (the Claude Desktop connector does).
+  const job: RenderJob = { running: true, progress: 0, stage: 'Waiting', queued: true, noCheck: req.body?.check === false };
   renders.set(key, job);
   saveRenderState(slug, variant, job);
   heavyQ.push({
@@ -1163,6 +1198,61 @@ export const askArgs = (slug: string, prompt: string, resume?: string) => {
   args.push('--', prompt);
   return args;
 };
+
+// "Check my video": measure + contact sheet, then Claude looks and answers in the Ask box.
+const startVideoCheck = async (slug: string, video: string, props: ReelProps) => {
+  try {
+    const report = await checkVideo(video, props, file(slug, 'out/check'));
+    writeJson(file(slug, 'out/check/last.json'), report);
+    if (asks.has(slug)) return; // she started her own question meanwhile
+    const sessionId = chat(slug).sessionId;
+    pushChat(slug, { role: 'user', text: CHECK_ASK });
+    startAsk(slug, checkPrompt(report), { resume: sessionId });
+  } catch (e) {
+    toolLog(slug, `\n== video check failed: ${(e as Error).message}\n`);
+  }
+};
+const CHECK_ASK = 'Check my finished video / Sprawdź mój gotowy film';
+
+// Claude checks every new Instagram video (on unless she turns it off).
+app.get('/api/settings/autocheck', (_req, res) => {
+  res.json({ autoCheck: settings().autoCheck !== false });
+});
+app.put('/api/settings/autocheck', (req, res) => {
+  const autoCheck = req.body?.autoCheck !== false;
+  writeJson(SETTINGS, { ...readJson<Record<string, unknown>>(SETTINGS, {}), autoCheck });
+  res.json({ autoCheck });
+});
+
+app.post('/api/projects/:slug/check', async (req, res) => {
+  const slug = req.params.slug;
+  // {inline:true}: Claude in the Ask box asks for the report itself (sheet path + findings) and looks.
+  if (req.body?.inline === true) {
+    const latest = rendersOf(slug).find((r) => !isTikTokFile(r.file));
+    if (!latest) {
+      res.status(409).json({ code: 'no_video', error: 'Make the video first.' });
+      return;
+    }
+    try {
+      const report = await checkVideo(file(slug, `out/${latest.file}`), variantProps(slug, 'instagram'), file(slug, 'out/check'));
+      res.json(report);
+    } catch (e) {
+      res.status(500).json({ code: 'unknown', error: (e as Error).message });
+    }
+    return;
+  }
+  if (asks.has(slug)) {
+    res.status(409).json({ code: 'busy', error: 'Claude is still working on your last request' });
+    return;
+  }
+  const latest = rendersOf(slug).find((r) => !isTikTokFile(r.file));
+  if (!latest) {
+    res.status(409).json({ code: 'no_video', error: 'Make the video first.' });
+    return;
+  }
+  void startVideoCheck(slug, file(slug, `out/${latest.file}`), variantProps(slug, 'instagram'));
+  res.json({ ok: true });
+});
 
 const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried?: boolean }) => {
   const env = { ...process.env };

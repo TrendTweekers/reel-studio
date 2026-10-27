@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { checkEdit, type Problem } from '../src/shared/check';
 import { IG_PROMPTS } from '../src/shared/igPrompts';
+import { checkVideo } from '../server/videocheck';
 import { outputDuration, outputToSource, outputWords, sourceToOutput, totalFrames } from '../src/shared/time';
 import {
   FPS,
@@ -346,7 +347,7 @@ TASTE: fewer, better effects. About one effect every 2 to 4 seconds is plenty; p
 PICTURES AND MUSIC: use only her own board pictures (list_board) and her own music (list_music). If she asks for a picture from the internet or Pinterest, tell her it can bring a copyright claim and ask her to add her own picture on the page.
 NEVER delete a reel, a picture or a video file (there are no tools for it; she does that on the page herself). NEVER post anything to Instagram or TikTok; she posts herself.
 AFTER A NEW REEL: offer to proofread the subtitles (get_words, then fix_word for misheard brand and fashion words).
-MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then tell her where the file is (show_in_finder) and that she can AirDrop it to her phone.
+MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then call check_video, look at the picture and tell her if it is ready to post or what you would fix; then show_in_finder and say she can AirDrop it to her phone.
 INSTAGRAM (before filming, after posting): for a reel idea, script or hooks, a caption check, a week plan, replies, DMs, carousels, stories or a profile check, call instagram_guide with the job and follow it. These tools work without Reel Studio open.
 If a tool says Reel Studio is not open, call open_reel_studio.`;
 
@@ -882,7 +883,7 @@ tool(
 type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; stage?: string; position?: number };
 const renderDone = (slug: string, r: RenderState) => {
   const file = path.join(ROOT, 'projects', slug, 'out', r.file ?? '');
-  return `The video is ready: ${file}\nIt is 1080x1920, right for Reels and TikTok. Call show_in_finder to show it in Finder; she can AirDrop it to her phone and post it herself.`;
+  return `The video is ready: ${file}\nIt is 1080x1920, right for Reels and TikTok. NOW call check_video and look at it before you tell her it is done. Then call show_in_finder; she can AirDrop it to her phone and post it herself.`;
 };
 const waitRender = async (slug: string, extra: Extra, maxMs: number) => {
   const t0 = Date.now();
@@ -903,7 +904,7 @@ tool(
     const ps = await problems(slug);
     if (ps.length) return `Not started. Fix these first:\n${problemText(ps)}`;
     const before = await api<RenderState>('GET', `/api/projects/${enc(slug)}/render`);
-    if (!before.running) await api('POST', `/api/projects/${enc(slug)}/render`, variant && variant !== 'instagram' ? { variant } : {});
+    if (!before.running) await api('POST', `/api/projects/${enc(slug)}/render`, { ...(variant && variant !== 'instagram' ? { variant } : {}), check: false });
     await sleep(1500);
     const r = await waitRender(slug, extra, 10 * 60 * 1000);
     if (r.running) return `Still making the video (${Math.round(r.progress * 100)}%). Call video_status in a minute.`;
@@ -920,6 +921,23 @@ tool('video_status', 'How far the video of a reel is (after make_video), and whe
   const p = await getProject(slug);
   return p.renders.length ? `No video is being made. Finished videos: ${p.renders.map((x) => path.join(ROOT, 'projects', slug, 'out', x.file)).join(', ')}` : 'No video made yet.';
 });
+tool(
+  'check_video',
+  'Check her newest finished video before she posts it: returns a contact sheet (12 frames, 4 per row, with their times) and automatic findings (text over her face, hidden subtitles, effects that did not fit, dark or washed-out parts, loudness). LOOK at the picture like a fashion editor and tell her in plain words: good to post, or at most 5 problems with the time and the fix you suggest. Do not change the reel before she says yes.',
+  { slug: slugArg },
+  READ,
+  async ({ slug }, extra) => {
+    const p = await getProject(slug);
+    const latest = p.renders.filter((r) => !/ TikTok( \(\d+\))?\.mp4$/i.test(r.file)).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0];
+    if (!latest) return 'There is no finished video yet. Call make_video first.';
+    await progress(extra, 0.2, 'Looking at the video');
+    const r = await checkVideo(path.join(ROOT, 'projects', slug, 'out', latest.file), reelProps(p), path.join(ROOT, 'projects', slug, 'out', 'check'));
+    const mm = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const text = `Video: ${latest.file}\nSheet frames at: ${r.times.map(mm).join(', ')}\nLoudness: ${r.loudness.lufs ?? '?'} LUFS\nAutomatic findings:\n${r.findings.length ? r.findings.map((f) => `- ${f}`).join('\n') : '- none'}`;
+    const img = fs.readFileSync(r.sheet).toString('base64');
+    return [{ type: 'text', text }, { type: 'image', data: img, mimeType: 'image/jpeg' }];
+  },
+);
 tool(
   'show_in_finder',
   'Show a finished video (or the covers) in Finder on her Mac. file = a video file name from get_reel, "covers" for the cover folder, or empty for the newest video.',

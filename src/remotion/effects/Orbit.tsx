@@ -9,7 +9,7 @@ import { FPS, WIDTH } from '../../shared/types';
 import { CREAM, INK } from '../color';
 import { useReel } from '../context';
 import { clamp, SAFE, SAFE_BOTTOM, type Rect, type TimedEffect, type Zoom } from '../model';
-import { footageFilter } from '../parts/Vibe';
+import { footageFilterFor } from '../parts/Vibe';
 import { CLAMP, lerp, outro } from './anim';
 import { Person, useAbsFrame, useHasCutout } from './footage';
 import { BoardImage } from './Picture';
@@ -25,7 +25,7 @@ const CamPerson: React.FC<{ e: TimedEffect }> = ({ e }) => {
   const abs = useAbsFrame(e);
   const [outer, inner] = model.camera(Math.min(abs, model.total - 1));
   return (
-    <AbsoluteFill style={{ ...zoomStyle(outer), filter: footageFilter(props.edit.style.vibe) }}>
+    <AbsoluteFill style={{ ...zoomStyle(outer), filter: footageFilterFor(props.edit) }}>
       <AbsoluteFill style={zoomStyle(inner)}>
         <Person e={e} />
       </AbsoluteFill>

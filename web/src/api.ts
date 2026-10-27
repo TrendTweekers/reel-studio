@@ -33,7 +33,7 @@ export type ProjectDetail = {
 };
 export type Problem = { code: string; text: string; detail?: string; effectId?: string };
 export type HistoryItem = { id: string; at: string; effects: number; seconds: number; by: 'page' | 'claude' | 'auto' };
-export type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; code?: string; stage?: string; editChangedSince?: boolean; stopped?: boolean };
+export type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; code?: string; stage?: string; editChangedSince?: boolean; stopped?: boolean; check?: 'started' | 'skipped' };
 export type Variant = 'instagram' | 'tiktok';
 export type FileItem = { file: string; url: string };
 export type SfxItem = { name: string; url: string };
@@ -110,6 +110,10 @@ export const api = {
   autoedit: (slug: string, pauseGap?: number) =>
     req<{ editVersion: number }>('POST', `/api/projects/${enc(slug)}/autoedit`, { pauseGap }),
   cutout: (slug: string) => req<unknown>('POST', `/api/projects/${enc(slug)}/cutout`, {}),
+  checkVideo: (slug: string) => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/check`, {}),
+  autoCheck: () => req<{ autoCheck: boolean }>('GET', '/api/settings/autocheck'),
+  setAutoCheck: (on: boolean) => req<{ autoCheck: boolean }>('PUT', '/api/settings/autocheck', { autoCheck: on }),
+  measureLight: (slug: string) => req<{ ok: boolean; light: NonNullable<Edit['light']> }>('POST', `/api/projects/${enc(slug)}/light`, {}),
   startRender: (slug: string, variant: Variant = 'instagram') => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/render`, { variant }),
   renderState: (slug: string, variant: Variant = 'instagram') =>
     req<RenderState>('GET', `/api/projects/${enc(slug)}/render${variant === 'tiktok' ? '?variant=tiktok' : ''}`),

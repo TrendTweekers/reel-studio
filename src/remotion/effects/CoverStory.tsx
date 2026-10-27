@@ -11,7 +11,7 @@ import { INK } from '../color';
 import { useReel } from '../context';
 import { fontFamily } from '../fonts';
 import { RIGHT_UI, SAFE, SAFE_BOTTOM, type TimedEffect, type Zoom } from '../model';
-import { footageFilter, Grade } from '../parts/Vibe';
+import { footageFilterFor, Grade } from '../parts/Vibe';
 import { CLAMP, easeIn, outro } from './anim';
 import { Footage, Person, useAbsFrame, useHasCutout } from './footage';
 
@@ -28,7 +28,7 @@ const Cam: React.FC<{ e: TimedEffect; person?: boolean }> = ({ e, person }) => {
   const { model, props } = useReel();
   const abs = useAbsFrame(e);
   const [outer, inner] = model.camera(Math.min(abs, model.total - 1));
-  const filter = [footageFilter(props.edit.style.vibe), PRINT].filter(Boolean).join(' ');
+  const filter = [footageFilterFor(props.edit), PRINT].filter(Boolean).join(' ');
   return (
     <AbsoluteFill style={{ ...zoomStyle(outer), filter }}>
       <AbsoluteFill style={zoomStyle(inner)}>{person ? <Person e={e} /> : <Footage e={e} />}</AbsoluteFill>

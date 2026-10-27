@@ -10,7 +10,7 @@ import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame } from 
 import { FPS, HEIGHT, WIDTH } from '../../shared/types';
 import { useReel } from '../context';
 import { SAFE, SAFE_BOTTOM, clamp, type Rect, type TimedEffect } from '../model';
-import { Grade, footageFilter } from '../parts/Vibe';
+import { Grade, footageFilterFor } from '../parts/Vibe';
 import { Footage, Person, useAbsFrame, useBoardUrl, useHasCutout } from './footage';
 
 const CL = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
@@ -35,7 +35,7 @@ export const SceneCamera: React.FC<{ e: TimedEffect; children: React.ReactNode; 
         style={{
           transformOrigin: `${outer.ox}px ${outer.oy}px`,
           transform: outer.s === 1 ? undefined : `scale(${outer.s})`,
-          filter: footageFilter(props.edit.style.vibe),
+          filter: footageFilterFor(props.edit),
         }}
       >
         <AbsoluteFill

@@ -1,11 +1,27 @@
 // Looks: film grain + warm grade, glow haze, editorial frame, progress bar.
 import React from 'react';
 import { AbsoluteFill, useCurrentFrame } from 'remotion';
-import { HEIGHT, WIDTH } from '../../shared/types';
+import { HEIGHT, WIDTH, type Edit } from '../../shared/types';
 import { CREAM } from '../color';
 import { useReel } from '../context';
 
 // CSS filter for the footage layers (video + cutout get the same grade).
+// The auto light fix as CSS filters, scaled by strength (0 = none).
+export const lightFilter = (light: Edit['light']): string | undefined => {
+  if (!light?.auto || !light.fix || !(light.strength > 0)) return undefined;
+  const k = Math.min(1.5, light.strength);
+  const f = light.fix;
+  const at = (v: number) => +(1 + (v - 1) * k).toFixed(3);
+  const parts = [`brightness(${at(f.brightness)})`, `contrast(${at(f.contrast)})`, `saturate(${at(f.saturate)})`];
+  const w = +(f.warmth * k).toFixed(3);
+  if (w > 0.005) parts.push(`sepia(${w})`);
+  return parts.join(' ');
+};
+
+// Vibe look + the light fix: everything that colours her footage.
+export const footageFilterFor = (edit: Edit): string | undefined =>
+  [lightFilter(edit.light), footageFilter(edit.style.vibe)].filter(Boolean).join(' ') || undefined;
+
 export const footageFilter = (vibe: string): string | undefined => {
   if (vibe === 'film') return 'sepia(0.1) contrast(1.04) saturate(0.94) brightness(1.01)';
   if (vibe === 'glow') return 'brightness(1.03) contrast(0.97) saturate(1.05)';

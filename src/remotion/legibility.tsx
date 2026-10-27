@@ -14,7 +14,7 @@ export const shadowFor = (textColor: string) =>
 export const dropFilterFor = (textColor: string) =>
   isDark(textColor)
     ? 'drop-shadow(0 0 1px rgba(255,250,242,0.7)) drop-shadow(0 3px 12px rgba(255,250,242,0.5))'
-    : 'drop-shadow(0 0 1px rgba(0,0,0,0.7)) drop-shadow(0 2px 3px rgba(0,0,0,0.45)) drop-shadow(0 6px 20px rgba(0,0,0,0.32))';
+    : 'drop-shadow(0 0 2px rgba(0,0,0,0.85)) drop-shadow(0 2px 4px rgba(0,0,0,0.55)) drop-shadow(0 6px 20px rgba(0,0,0,0.35))';
 
 export const Scrim: React.FC<{ rect: Rect; textColor: string; opacity?: number; spreadX?: number; spreadY?: number }> = ({
   rect,
@@ -33,7 +33,8 @@ export const Scrim: React.FC<{ rect: Rect; textColor: string; opacity?: number; 
         width: rect.w + spreadX * 2,
         height: rect.h + spreadY * 2,
         opacity,
-        background: `radial-gradient(closest-side, rgba(${c},0.42) 0%, rgba(${c},0.30) 45%, rgba(${c},0.12) 75%, rgba(${c},0) 100%)`,
+        // Strong enough for white jeans and a window behind her, still soft at the edges.
+        background: `radial-gradient(closest-side, rgba(${c},0.64) 0%, rgba(${c},0.5) 45%, rgba(${c},0.2) 75%, rgba(${c},0) 100%)`,
         pointerEvents: 'none',
       }}
     />

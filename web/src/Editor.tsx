@@ -540,10 +540,12 @@ export function Editor({ slug }: { slug: string }) {
         return;
       }
       if (s.url) setDoneFlash({ url: s.url, id: Date.now() });
-      showToast(t('renderReadyToast'), s.url ? { long: true, href: s.url, link: `${t('download')} ↓` } : { long: true });
+      // Claude checks the new video: open the Ask box so she sees it working.
+      if (s.check === 'started') setAskOpen(true);
+      showToast(t(s.check === 'started' ? 'renderReadyCheckToast' : 'renderReadyToast'), s.url ? { long: true, href: s.url, link: `${t('download')} ↓` } : { long: true });
       setTimeout(() => document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     },
-    [showToast, t],
+    [showToast, t, setAskOpen],
   );
   const igJob = useRenderJob(slug, 'instagram', flush, refreshMeta, onRenderEvent);
   const tkJob = useRenderJob(slug, 'tiktok', flush, refreshMeta, onRenderEvent);
@@ -853,7 +855,7 @@ export function Editor({ slug }: { slug: string }) {
           {groupHead('look')}
           <StylePanel slug={slug} edit={edit} styles={styles.styles} defaultStyle={styles.defaultStyle} reloadStyles={reloadStyles} applyStyle={runApplyStyle} />
           <FontsPanel edit={edit} change={change} />
-          <VibePanel edit={edit} change={change} />
+          <VibePanel edit={edit} change={change} slug={slug} />
           {groupHead('words')}
           <WordsPanel
             edit={edit}
@@ -905,6 +907,10 @@ export function Editor({ slug }: { slug: string }) {
             problems={problems}
             onFix={fixProblem}
             lastChange={lastChange}
+            onCheck={() => {
+              setAskOpen(true);
+              void api.checkVideo(slug).catch(() => showToast(t('checkBusy')));
+            }}
           />
           {!askOpen && <p className="tip">{t('tip')}</p>}
         </main>

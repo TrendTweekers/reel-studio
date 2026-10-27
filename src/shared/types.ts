@@ -159,7 +159,13 @@ export type Edit = {
   // The TikTok version: same edit with these changes (other hook, other caption, no Instagram words).
   // Rendered with POST /render {variant: 'tiktok'}.
   tiktok?: { hook?: Edit['hook']; endCardLine?: string; endCardSub?: string; post?: PostText };
+  // Auto light fix: measured once from the video (server/light.ts), applied as a colour filter on the
+  // footage only (never on text or cards). strength 0 = off look, 1 = measured fix, up to 1.5.
+  light?: { auto: boolean; strength: number; fix?: LightFix };
 };
+
+// The measured correction at strength 1. Each value is a CSS filter amount (1 = no change; warmth 0 = none).
+export type LightFix = { brightness: number; contrast: number; saturate: number; warmth: number };
 
 export type EndCard = {
   enabled: boolean;
@@ -243,6 +249,7 @@ export type HistoryEntry = { id: string; at: string; effects: number; seconds: n
 export type CoverProps = {
   cover: Cover;
   style: Edit['style'];
+  light?: Edit['light']; // the same auto light fix as the video
   urls: { frame: string }; // full URL of the chosen frame image (covers/<file>.jpg)
   face: FaceSample | null;
   grid: boolean; // true = render the 1080x1440 grid version

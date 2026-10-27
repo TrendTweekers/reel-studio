@@ -16,14 +16,14 @@ import { Hook } from './parts/Hook';
 import { Sound } from './parts/Sound';
 import { Subtitles } from './parts/Subtitles';
 import { CutoutTrack, VideoTrack, VoiceTrack } from './parts/VideoTrack';
-import { Finish, Grade, footageFilter } from './parts/Vibe';
+import { Finish, Grade, footageFilterFor } from './parts/Vibe';
 
 export const Reel: React.FC<ReelProps> = (props) => {
   const model = useMemo(() => buildModel(props), [props]);
   const hookFont = fontFamily(props.edit.style.hookFont);
   const subFont = fontFamily(props.edit.style.subtitleFont);
   const ctx = useMemo<ReelCtx>(() => ({ props, model, hookFont, subFont }), [props, model, hookFont, subFont]);
-  const filter = footageFilter(props.edit.style.vibe);
+  const filter = footageFilterFor(props.edit);
 
   return (
     <ReelContext.Provider value={ctx}>

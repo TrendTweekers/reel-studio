@@ -7,7 +7,7 @@ import { HEIGHT, WIDTH } from '../../shared/types';
 import { CREAM } from '../color';
 import { useReel } from '../context';
 import type { TimedEffect, Zoom } from '../model';
-import { footageFilter, Grade } from '../parts/Vibe';
+import { footageFilterFor, Grade } from '../parts/Vibe';
 import { CLAMP } from './anim';
 import { Footage, useAbsFrame, useFace } from './footage';
 
@@ -25,7 +25,7 @@ const CamFootage: React.FC<{ e: TimedEffect }> = ({ e }) => {
   const abs = useAbsFrame(e);
   const [outer, inner] = model.camera(Math.min(abs, model.total - 1));
   return (
-    <AbsoluteFill style={{ ...zoomStyle(outer), filter: footageFilter(props.edit.style.vibe) }}>
+    <AbsoluteFill style={{ ...zoomStyle(outer), filter: footageFilterFor(props.edit) }}>
       <AbsoluteFill style={zoomStyle(inner)}>
         <Footage e={e} />
       </AbsoluteFill>

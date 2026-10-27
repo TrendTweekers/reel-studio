@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Edit } from '../../src/shared/types';
 import { HOOK_FONTS, SFX_NAMES, SUBTITLE_FONTS } from '../../src/shared/types';
 import { api, upload, type FileItem, type Problem, type RenderInfo, type SfxItem } from './api';
 import type { Change, RenderJob, UsedBy } from './Editor';
-import { errText, fmt, FONT_CAPTIONS, numFixed, sfxLabel, useT, type StrKey } from './i18n';
+import { errText, fmt, FONT_CAPTIONS, num, numFixed, sfxLabel, useT, type StrKey } from './i18n';
 import { Check, Chips, Group, HelpTip, Panel, playPreview } from './ui';
 
 type P = { edit: Edit; change: Change };
@@ -320,8 +320,25 @@ const VIBE_SWATCH: Record<Edit['style']['vibe'], string> = {
   editorial: 'linear-gradient(135deg,#1b1b1b,#6d6d6d 60%,#f6f1ea)',
 };
 
-export function VibePanel({ edit, change }: P) {
-  const { t } = useT();
+export function VibePanel({ edit, change, slug }: P & { slug: string }) {
+  const { t, lang } = useT();
+  const [measuring, setMeasuring] = useState(false);
+  const [lightErr, setLightErr] = useState(false);
+  const light = edit.light;
+  const setLight = (patch: Partial<NonNullable<Edit['light']>>, key?: string) =>
+    change((e) => ({ ...e, light: { auto: true, strength: 1, ...e.light, ...patch } }), key);
+  const measure = async () => {
+    setMeasuring(true);
+    setLightErr(false);
+    try {
+      const r = await api.measureLight(slug);
+      change((e) => ({ ...e, light: r.light }));
+    } catch {
+      setLightErr(true);
+    } finally {
+      setMeasuring(false);
+    }
+  };
   const setStyle = (patch: Partial<Edit['style']>) => change((e) => ({ ...e, style: { ...e.style, ...patch } }));
   const setTog = (patch: Partial<Edit['toggles']>) => change((e) => ({ ...e, toggles: { ...e.toggles, ...patch } }));
   return (
@@ -334,6 +351,31 @@ export function VibePanel({ edit, change }: P) {
             <span className="font-cap">{edit.style.vibe === v ? t('currentChoice') : t(`vibeCap_${v}` as StrKey)}</span>
           </button>
         ))}
+      </div>
+      <div className="light-box">
+        <div className="group-label">{t('lightFix')}</div>
+        {light?.fix ? (
+          <>
+            <Check checked={light.auto} label={t('lightAuto')} onChange={(v) => setLight({ auto: v })} />
+            {light.auto && (
+              <label className="field">
+                <span>
+                  {t('lightStrength')} <b>{num(Math.round(light.strength * 100), lang)}%</b>
+                </span>
+                <input type="range" min={0} max={1.5} step={0.05} value={light.strength} onChange={(e) => setLight({ strength: Number(e.target.value) }, 'lightStrength')} />
+              </label>
+            )}
+            <p className="muted small">{t('lightNote')}</p>
+          </>
+        ) : (
+          <>
+            <p className="muted small">{t('lightMissing')}</p>
+            <button className="btn" onClick={measure} disabled={measuring}>
+              {measuring ? t('lightMeasuring') : t('lightMeasure')}
+            </button>
+            {lightErr && <p className="muted small">{t('lightFailed')}</p>}
+          </>
+        )}
       </div>
       <div className="row gap">
         <Check checked={edit.toggles.grain} label={t('grain')} onChange={(v) => setTog({ grain: v })} />
@@ -442,6 +484,7 @@ export function RenderPanel({
   problems,
   onFix,
   lastChange,
+  onCheck,
 }: {
   slug: string;
   jobs: { instagram: RenderJob; tiktok: RenderJob };
@@ -449,8 +492,14 @@ export function RenderPanel({
   problems: Problem[] | null;
   onFix: (effectId?: string) => void;
   lastChange: number;
+  onCheck: () => void;
 }) {
   const { t, lang } = useT();
+  const [autoCheck, setAutoCheck] = useState<boolean | null>(null);
+  useEffect(() => {
+    api.autoCheck().then((r) => setAutoCheck(r.autoCheck)).catch(() => {});
+  }, []);
+  const hasIgVideo = renders.some((r) => !isTiktokFile(r.file));
   const sorted = [...renders].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const reveal = (file: string) => void api.reveal(slug, file).catch(() => {});
   const latest = (v: 'instagram' | 'tiktok') => jobs[v].render;
@@ -484,6 +533,23 @@ export function RenderPanel({
       <div className="jobs">
         <JobBlock slug={slug} job={jobs.instagram} label={t('makeInstagram')} primary />
         <JobBlock slug={slug} job={jobs.tiktok} label={t('makeTiktok')} primary={false} />
+      </div>
+      <div className="video-check">
+        {autoCheck !== null && (
+          <Check
+            checked={autoCheck}
+            label={t('autoCheck')}
+            onChange={(v) => {
+              setAutoCheck(v);
+              void api.setAutoCheck(v).catch(() => setAutoCheck(!v));
+            }}
+          />
+        )}
+        {hasIgVideo && !jobs.instagram.render?.running && (
+          <button className="btn" onClick={onCheck}>
+            ✦ {t('checkVideo')}
+          </button>
+        )}
       </div>
       {sorted.length > 0 && (
         <Group label={t('earlierRenders')}>

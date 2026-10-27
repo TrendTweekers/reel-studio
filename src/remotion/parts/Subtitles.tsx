@@ -44,7 +44,7 @@ export const Subtitles: React.FC = () => {
     const base: React.CSSProperties = { display: 'inline-block', margin: '0 0.13em', whiteSpace: 'pre' };
     let s: React.CSSProperties = base;
     if (style === 'clean') {
-      s = { ...base, color: '#fff', opacity: spoken ? 1 : 0.78 };
+      s = { ...base, color: '#fff', opacity: spoken ? 1 : 0.9 };
     } else if (style === 'box') {
       s = current
         ? { ...base, color: CREAM, background: INK, borderRadius: 14, padding: '0 0.2em', margin: '0 0.06em' }
@@ -65,7 +65,7 @@ export const Subtitles: React.FC = () => {
       s = {
         ...base,
         color: current ? accentOnVideo : '#fff',
-        opacity: spoken || current ? 1 : 0.8,
+        opacity: spoken || current ? 1 : 0.9,
         transform: `scale(${scale})`,
         transformOrigin: '50% 55%',
         margin: `0 ${0.13 + Math.max(0, scale - 1) * 0.9}em`,
