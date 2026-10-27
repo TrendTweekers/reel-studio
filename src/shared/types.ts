@@ -162,7 +162,44 @@ export type Edit = {
   // Auto light fix: measured once from the video (server/light.ts), applied as a colour filter on the
   // footage only (never on text or cards). strength 0 = off look, 1 = measured fix, up to 1.5.
   light?: { auto: boolean; strength: number; fix?: LightFix };
+  // 'long' = a YouTube video (20 to 40 min). Absent = 'reel'. A long video is drawn by the "Long"
+  // composition (src/remotion/long), at the size from longSize() in src/shared/long.ts. It uses only
+  // edit.segments, style, sound.music, light, wordFixes, effects of LONG_KINDS and edit.long.
+  format?: VideoFormat;
+  long?: LongSettings;
 };
+
+export type VideoFormat = 'reel' | 'long';
+
+// A chapter of a long video. at = SOURCE seconds where it starts. YouTube shows chapters from the
+// description: the first must be at 0:00, at least 3, each 10 s or longer (see chapterList()).
+export type Chapter = { at: number; title: string };
+
+export type LongSettings = {
+  subtitles: boolean; // burned-in subtitles at the bottom (YouTube has its own, so default off)
+  chapterCards: boolean; // a calm chapter title for 2.5 s when a chapter starts (not on the first one)
+  chapters: Chapter[];
+  nameTag?: { name: string; line?: string; at: number; duration: number } | null; // lower third; at = source s
+  zoomJumps: boolean; // a gentle 1.08x punch-in on some cuts, so jump cuts feel intended
+  title?: string; // the YouTube title (max 100 chars)
+  description?: string; // the YouTube description, without the chapter list (that is added from chapters)
+  thumbnail?: { t: number; title?: string; accent?: string }; // t = source seconds of the frame
+  retakes?: number; // how many repeated takes the first edit cut (for the "what I did" card)
+};
+
+// Effects a long video can show. Others in edit.effects are ignored by the Long composition.
+export const LONG_KINDS: EffectKind[] = ['picture', 'label', 'zoom'];
+
+// What the YouTube thumbnail still (composition "Thumbnail", 1280x720) gets.
+export type ThumbnailProps = {
+  frame: string; // full URL of the frame image (any size or shape; tall frames get a blurred fill)
+  title?: string;
+  accent?: string;
+  style: Edit['style'];
+  light?: Edit['light'];
+  face: FaceSample | null; // face box in the frame, 0..1, so the title avoids her face
+};
+export const THUMBNAIL = { width: 1280, height: 720 };
 
 // The measured correction at strength 1. Each value is a CSS filter amount (1 = no change; warmth 0 = none).
 export type LightFix = { brightness: number; contrast: number; saturate: number; warmth: number };
@@ -212,6 +249,7 @@ export type ProjectMeta = {
   autoTitle?: boolean; // true when the title was taken from the transcript (file was IMG_1234 etc.)
   // Batch video (upload header x-batch: 1): split into clips after analysis. clips = the clip slugs.
   batch?: { requested?: boolean; clips?: string[]; reason?: string };
+  format?: VideoFormat; // 'long' when uploaded as a YouTube video
 };
 
 export type RenderVariant = 'instagram' | 'tiktok';

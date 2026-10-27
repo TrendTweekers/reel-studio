@@ -3,7 +3,7 @@
 // 2 or 3 videos dropped in a row do not make the Mac swap.
 import type { ChildProcess } from 'node:child_process';
 
-export type JobKind = 'analyse' | 'cutout' | 'covers' | 'cover-stills' | 'render';
+export type JobKind = 'analyse' | 'cutout' | 'covers' | 'cover-stills' | 'thumbnail' | 'render';
 export type Job = { slug: string; kind: JobKind; run: () => Promise<void>; onPosition?: (position: number) => void };
 
 export class JobQueue {

@@ -17,12 +17,16 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import emit, progress, fail, run_tool, project_arg, need, probe, duration_of, ffmpeg, hwaccel_args, write_json_atomic
 
-FW, FH = 540, 960  # analysis frame size (9:16)
+FW, FH = 540, 960  # analysis frame size (9:16); a wide proxy (long YouTube video) uses 960x540
 SWITCH_AFTER = 5   # samples in a row before following a different person
 HOLD_SECONDS = 1.0
 
 
 def read_frames(proxy, every):
+    global FW, FH
+    v = [s for s in probe(proxy)["streams"] if s.get("codec_type") == "video"]
+    if v and int(v[0].get("width") or 0) > int(v[0].get("height") or 0):
+        FW, FH = 960, 540
     cmd = [ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin"] + hwaccel_args() + [
         "-i", proxy, "-vf", f"fps=1/{every},scale={FW}:{FH}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -55,6 +55,8 @@ pauses never moves an effect away from its word.
   "make the hook bigger", "less zoom", "cut the part where I laugh").
 - Bring in a video from a file on the Mac: `/reel-import`.
 - Cut a long video into short reels with the best moments: `/reel-highlights`.
+- A long YouTube video (edit.json `"format": "long"`): chapters, title, description, name tag,
+  thumbnail and Shorts: `/yt-long`. It is not a reel: no hook, end card or Instagram caption.
 - Make a cover (thumbnail) for Instagram and TikTok: `/reel-cover`.
 - Editing styles (whole looks in one click, her own saved styles): `/reel-style`.
 - The closing card that sells the ebook with a comment keyword, and which reel sold: `/reel-endcard`.

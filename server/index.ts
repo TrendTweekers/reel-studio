@@ -22,6 +22,9 @@ import { AUDIO, IMAGE, intake } from './intake';
 import { splitParts } from './split';
 import { mountLooks } from './looks';
 import { autoTitle, isGenericTitle, titleFromWords } from './title';
+import { findRetakes, longFirstEdit, subtract } from './longedit';
+import { isLong, longSize } from '../src/shared/long';
+import type { ThumbnailProps } from '../src/shared/types';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROJECTS = path.join(ROOT, 'projects');
@@ -172,6 +175,19 @@ const probeDuration = (p: string) =>
     f.on('error', () => resolve(0));
   });
 
+const probeSize = (p: string) =>
+  new Promise<{ width: number; height: number }>((resolve) => {
+    const f = track(spawn('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', p]));
+    let out = '';
+    f.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    f.on('close', () => {
+      const [width, height] = out.trim().split('x').map(Number);
+      resolve({ width: width || 1080, height: height || 1920 });
+    });
+    f.on('error', () => resolve({ width: 1080, height: 1920 }));
+  });
+const isLongProject = (slug: string) => meta(slug).format === 'long';
+
 // ---- Editing styles ----
 const ownStyles = (): EditingStyle[] => listFiles(STYLES, /\.json$/).map((f) => readJson<EditingStyle | null>(path.join(STYLES, f), null)).filter((x): x is EditingStyle => !!x?.id);
 const allStyles = () => [...BUILT_IN_STYLES.map((s) => ({ ...s, own: false })), ...ownStyles().map((s) => ({ ...s, own: true }))];
@@ -213,7 +229,8 @@ const runAnalyse = async (slug: string, force: boolean) => {
       const [pd, wd] = await Promise.all([probeDuration(file(slug, 'proxy.mp4')), probeDuration(file(slug, 'audio16k.wav'))]);
       normalized = pd > 0 && Math.abs(pd - wd) < 1;
     }
-    if (!normalized) await runTool(slug, 'normalize', 'normalize');
+    const long = isLongProject(slug);
+    if (!normalized) await runTool(slug, 'normalize', 'normalize', long ? ['--long'] : []);
     if (force || !jsonArrayOk(file(slug, 'words.json'))) {
       await runTool(slug, 'transcribe', 'transcribe', process.env.REEL_LANGUAGE ? ['--language', process.env.REEL_LANGUAGE] : []);
       // A file name ("IMG_4821", "VID_...", "source") never becomes the title: some styles print it.
@@ -223,11 +240,23 @@ const runAnalyse = async (slug: string, force: boolean) => {
         setMeta(slug, { title: t.title, autoTitle: true });
       }
     }
-    if (force || !jsonArrayOk(file(slug, 'faces.json'))) await runTool(slug, 'faces', 'faces');
+    // A long video: a face sample every 0.5 s is plenty (only the zoom jumps and the thumbnail use it).
+    if (force || !jsonArrayOk(file(slug, 'faces.json'))) await runTool(slug, 'faces', 'faces', long ? ['--every', '0.5'] : []);
     setStatus(slug, { step: 'autoedit', progress: 0.5 });
     if (!fs.existsSync(file(slug, 'edit.json'))) {
       const transcript = readJson<{ language?: string }>(file(slug, 'transcript.json'), {});
-      const edit = firstEdit({
+      const firstOf = async () =>
+        long
+          ? longFirstEdit({
+              title: isGenericTitle(meta(slug).title) ? '' : (meta(slug).title ?? ''),
+              language: transcript.language ?? 'pl',
+              duration: await probeDuration(file(slug, 'proxy.mp4')),
+              ...(await probeSize(file(slug, 'proxy.mp4'))),
+              words: readJson(file(slug, 'words.json'), []),
+              look: defaultLook(),
+            })
+          : null;
+      const edit = (await firstOf()) ?? firstEdit({
         title: isGenericTitle(meta(slug).title) ? '' : (meta(slug).title ?? ''),
         language: transcript.language ?? 'pl',
         duration: await probeDuration(file(slug, 'proxy.mp4')),
@@ -385,7 +414,8 @@ const renderName = (slug: string, variant: RenderVariant = 'instagram') => {
       .trim() || slug;
   const d = new Date();
   const p2 = (n: number) => String(n).padStart(2, '0');
-  const base = `${title} ${p2(d.getDate())}.${p2(d.getMonth() + 1)} ${p2(d.getHours())}-${p2(d.getMinutes())}${variant === 'tiktok' ? ' TikTok' : ''}`;
+  const suffix = variant === 'tiktok' ? ' TikTok' : isLongProject(slug) ? ' YouTube' : '';
+  const base = `${title} ${p2(d.getDate())}.${p2(d.getMonth() + 1)} ${p2(d.getHours())}-${p2(d.getMinutes())}${suffix}`;
   let name = `${base}.mp4`;
   for (let i = 2; fs.existsSync(file(slug, `out/${name}`)); i++) name = `${base} (${i}).mp4`;
   return name;
@@ -420,7 +450,7 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
     const { renderMedia, selectComposition, makeCancelSignal } = await import('@remotion/renderer');
     const serveUrl = await getBundle();
     const inputProps = variantProps(slug, variant);
-    const composition = await selectComposition({ serveUrl, id: 'Reel', inputProps });
+    const composition = await selectComposition({ serveUrl, id: isLong(inputProps.edit) ? 'Long' : 'Reel', inputProps });
     fs.mkdirSync(outDir, { recursive: true });
     job.stage = 'Making the video';
     save();
@@ -440,7 +470,10 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
           cancelSignal,
           // A slow or busy Mac must not fail the render: give each frame time and use half the cores.
           timeoutInMilliseconds: 120000,
-          concurrency: '50%',
+          // A long YouTube video is 30x more frames: use more of the Mac (she waits for it anyway).
+          concurrency: isLong(inputProps.edit) ? '75%' : '50%',
+          // The frame cache grows with the video length (2.7 GB at 15 min of a long video): keep it small.
+          offthreadVideoCacheSizeInBytes: 768 * 1024 * 1024,
           onProgress: ({ progress }) => {
             job.progress = Math.min(0.98, progress);
             const pct = Math.floor(job.progress * 100);
@@ -596,7 +629,7 @@ app.get('/api/projects', (_req, res) => {
     .filter((s) => safeSlug(s) && fs.statSync(dir(s)).isDirectory())
     .map((slug) => {
       const m = meta(slug);
-      return { slug, title: m.title ?? slug, createdAt: m.createdAt ?? '', status: statusOf(slug), parent: m.parent ?? null };
+      return { slug, title: m.title ?? slug, createdAt: m.createdAt ?? '', status: statusOf(slug), parent: m.parent ?? null, format: m.format ?? 'reel' };
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json(items);
@@ -624,7 +657,7 @@ app.post('/api/projects', (req, res) => {
           writeJson(file(slug, 'meta.json'), {
             title: name.replace(/\.[^.]+$/, '') || 'Reel',
             createdAt: new Date().toISOString(),
-            ...(req.headers['x-batch'] === '1' ? { batch: { requested: true } } : {}),
+            ...(req.headers['x-format'] === 'long' ? { format: 'long' } : req.headers['x-batch'] === '1' ? { batch: { requested: true } } : {}),
           });
           setStatus(slug, { step: 'uploading', progress: 0 });
           cb(null, dir(slug));
@@ -682,6 +715,7 @@ app.get('/api/projects/:slug', (req, res) => {
     summary: m.summary ?? null,
     parent: m.parent ?? null,
     range: m.range ?? null,
+    format: m.format ?? 'reel',
   });
 });
 
@@ -763,7 +797,10 @@ app.post('/api/projects/:slug/autoedit', async (req, res) => {
     return;
   }
   const gap = Math.min(1.5, Math.max(0.15, Number(req.body?.pauseGap ?? 0.4)));
-  edit.segments = cutPauses(readJson(file(slug, 'words.json'), []), edit.source.duration || (await probeDuration(file(slug, 'proxy.mp4'))), gap);
+  const words = readJson<Word[]>(file(slug, 'words.json'), []);
+  edit.segments = cutPauses(words, edit.source.duration || (await probeDuration(file(slug, 'proxy.mp4'))), gap);
+  // A long video keeps its repeated takes cut.
+  if (isLong(edit)) edit.segments = subtract(edit.segments, findRetakes(words));
   writeEdit(slug, edit, 'auto', { always: true });
   res.json({ editVersion: editVersion(slug) });
 });
@@ -841,6 +878,28 @@ const makeClip = (parent: string, parentEdit: Edit, start: number, end: number, 
   return slug;
 };
 
+// A Short from a long YouTube video: the long one is wide, so the part becomes its own new reel. Its
+// source is cut out of the long proxy, its words are copied (times moved), and it then gets the normal
+// reel analysis (crop around her face, faces, first edit). Returns the new slug at once.
+const makeShortFromLong = (parent: string, parentEdit: Edit, start: number, end: number, title: string) => {
+  const slug = slugify(title);
+  fs.mkdirSync(dir(slug), { recursive: true });
+  writeJson(file(slug, 'meta.json'), { title, createdAt: new Date().toISOString(), range: { start, end } });
+  const words = readJson<Word[]>(file(parent, 'words.json'), [])
+    .filter((w) => w.start >= start - 0.05 && w.end <= end + 0.05)
+    .map((w) => ({ ...w, start: +Math.max(0, w.start - start).toFixed(3), end: +Math.max(0, w.end - start).toFixed(3) }));
+  writeJson(file(slug, 'words.json'), words);
+  writeJson(file(slug, 'transcript.json'), { language: parentEdit.language });
+  setStatus(slug, { step: 'normalize', progress: 0 });
+  const p = track(
+    spawn('ffmpeg', ['-hide_banner', '-nostdin', '-y', '-ss', start.toFixed(3), '-i', file(parent, 'proxy.mp4'), '-t', (end - start).toFixed(3), '-c:v', 'libx264', '-crf', '17', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', file(slug, 'source.mp4')], { stdio: 'ignore' }),
+  );
+  const failed = () => setStatus(slug, { step: 'error', progress: 0, code: 'bad_file', message: PLAIN.bad_file });
+  p.on('error', failed);
+  p.on('close', (code) => (code === 0 && fs.existsSync(file(slug, 'source.mp4')) ? analyse(slug) : failed()));
+  return slug;
+};
+
 app.post('/api/projects/:slug/clip', (req, res) => {
   const parent = req.params.slug;
   const start = Number(req.body?.start);
@@ -855,6 +914,14 @@ app.post('/api/projects/:slug/clip', (req, res) => {
     res.status(400).json({ error: `start and end must be inside 0..${parentEdit.source.duration.toFixed(1)} s` });
     return;
   }
+  if (isLong(parentEdit)) {
+    if (end - start > 180) {
+      res.status(400).json({ error: 'A Short can be at most 3 minutes long.' });
+      return;
+    }
+    res.json({ slug: makeShortFromLong(parent, parentEdit, start, end, title), analysing: true });
+    return;
+  }
   res.json({ slug: makeClip(parent, parentEdit, start, end, title) });
 });
 
@@ -864,6 +931,7 @@ type SplitResult = { status: number; slugs: string[]; reason?: string; code?: st
 const splitProject = (parent: string): SplitResult => {
   const m = meta(parent);
   if (m.parent) return { status: 409, slugs: [], code: 'is_clip', reason: 'A clip cannot be split.' };
+  if (m.format === 'long') return { status: 409, slugs: [], code: 'is_long', reason: 'A YouTube video is not split. Make Shorts from its parts instead.' };
   const done = (m.batch?.clips ?? []).filter((c) => fs.existsSync(dir(c)));
   if (done.length) return { status: 409, slugs: done, code: 'already_split', reason: 'This video is already split.' };
   const parentEdit = readJson<Edit | null>(file(parent, 'edit.json'), null);
@@ -976,6 +1044,70 @@ app.post('/api/projects/:slug/covers/render', async (req, res) => {
     },
   });
   res.json({ ok: true, position: heavyQ.position(slug, 'cover-stills') || undefined });
+});
+
+// YouTube thumbnail (long videos): covers/thumbnail.jpg, 1280x720, from edit.long.thumbnail.
+const thumbErrors = new Map<string, string>();
+app.get('/api/projects/:slug/thumbnail', (req, res) => {
+  const slug = req.params.slug;
+  const f = file(slug, 'covers/thumbnail.jpg');
+  res.json({
+    url: fs.existsSync(f) ? `/media/${slug}/covers/thumbnail.jpg?v=${Math.round(mtime(f))}` : null,
+    rendering: heavyQ.has(slug, 'thumbnail'),
+    error: thumbErrors.get(slug) ?? null,
+  });
+});
+app.post('/api/projects/:slug/thumbnail/render', async (req, res) => {
+  const slug = req.params.slug;
+  if (analyseQ.has(slug)) {
+    res.status(409).json(BUSY);
+    return;
+  }
+  if (heavyQ.has(slug, 'thumbnail')) {
+    res.json({ ok: true, already: true });
+    return;
+  }
+  const edit = readJson<Edit | null>(file(slug, 'edit.json'), null);
+  const th = edit?.long?.thumbnail;
+  if (!edit || !th) {
+    res.status(409).json({ error: 'Pick a frame for the thumbnail first' });
+    return;
+  }
+  // The exact frame she picked, at full size.
+  fs.mkdirSync(file(slug, 'covers'), { recursive: true });
+  const frameName = `thumb-frame-${th.t.toFixed(2)}.jpg`;
+  if (!fs.existsSync(file(slug, `covers/${frameName}`)))
+    await new Promise<void>((resolve) => {
+      const f = track(spawn('ffmpeg', ['-y', '-ss', String(th.t), '-i', file(slug, 'proxy.mp4'), '-frames:v', '1', '-q:v', '2', file(slug, `covers/${frameName}`)]));
+      f.on('close', () => resolve());
+      f.on('error', () => resolve());
+    });
+  thumbErrors.delete(slug);
+  heavyQ.push({
+    slug,
+    kind: 'thumbnail',
+    run: async () => {
+      try {
+        const { renderStill, selectComposition } = await import('@remotion/renderer');
+        const serveUrl = await getBundle();
+        const faces = readJson<FaceSample[]>(file(slug, 'faces.json'), []);
+        const inputProps: ThumbnailProps = {
+          frame: `${ORIGIN}/media/${slug}/covers/${encodeURIComponent(frameName)}`,
+          title: th.title,
+          accent: th.accent,
+          style: edit.style,
+          light: edit.light,
+          face: faces.length ? faceAt(th.t, faces) : null,
+        };
+        const composition = await selectComposition({ serveUrl, id: 'Thumbnail', inputProps });
+        await renderStill({ composition, serveUrl, inputProps, imageFormat: 'jpeg', jpegQuality: 90, output: file(slug, 'covers/thumbnail.jpg') });
+      } catch (e) {
+        toolLog(slug, `\n== thumbnail failed\n${(e as Error).message}\n`);
+        thumbErrors.set(slug, mapError((e as Error).message).message);
+      }
+    },
+  });
+  res.json({ ok: true, position: heavyQ.position(slug, 'thumbnail') || undefined });
 });
 
 app.post('/api/projects/:slug/render', (req, res) => {
@@ -1189,6 +1321,7 @@ const askSystem = (slug: string) =>
     'Never delete a reel, a picture or a video; if she asks, tell her to use the delete button on the page.',
     'Reply in 1 to 3 short sentences in the language she wrote in. Say what you changed in plain words. No code, no file names.',
     'If her request is unclear, make your best sensible guess for small things, or ask ONE short question for big things.',
+    'If edit.json has "format": "long", it is a long YouTube video, not a reel: use the yt-long skill.',
   ].join(' ');
 
 export const askArgs = (slug: string, prompt: string, resume?: string) => {
@@ -1344,7 +1477,7 @@ app.post('/api/projects/:slug/ask', (req, res) => {
   }
   // A helper button on the page names its skill; Claude gets the hint, her chat shows only her words.
   const skill = String(req.body?.skill ?? '');
-  const prompt = /^ig-[a-z]+$/.test(skill) && fs.existsSync(path.join(ROOT, '.claude', 'skills', skill)) ? `${message}\n\n(Use the /${skill} skill.)` : message;
+  const prompt = /^(ig|yt)-[a-z]+$/.test(skill) && fs.existsSync(path.join(ROOT, '.claude', 'skills', skill)) ? `${message}\n\n(Use the /${skill} skill.)` : message;
   const sessionId = chat(slug).sessionId;
   pushChat(slug, { role: 'user', text: message });
   startAsk(slug, prompt, { resume: sessionId });

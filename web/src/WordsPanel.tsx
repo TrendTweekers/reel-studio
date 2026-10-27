@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Edit, EffectKind, Word } from '../../src/shared/types';
-import { FPS, NEEDS_CUTOUT } from '../../src/shared/types';
+import { FPS, LONG_KINDS, NEEDS_CUTOUT } from '../../src/shared/types';
 import { outputToSource, sourceToOutput } from '../../src/shared/time';
 import type { FileItem } from './api';
 import type { Change } from './Editor';
@@ -38,6 +38,8 @@ export function WordsPanel({
   startCutout,
   seekSource,
   onAdded,
+  long,
+  onShort,
 }: {
   edit: Edit;
   change: Change;
@@ -51,7 +53,11 @@ export function WordsPanel({
   startCutout: () => void;
   seekSource: (t: number) => void;
   onAdded: (id: string) => void;
+  // Long YouTube video: only the effects it can show, and "Make a Short" on a selection.
+  long?: boolean;
+  onShort?: (start: number, end: number) => void;
 }) {
+  const actions = long ? ACTIONS.filter((k) => LONG_KINDS.includes(k)) : ACTIONS;
   const { t } = useT();
   const [open, setOpen] = useState<number | null>(null);
   const [sel, setSel] = useState<[number, number] | null>(null);
@@ -374,12 +380,24 @@ export function WordsPanel({
                     {fmt(t('keepN'), { n: selCount })}
                   </button>
                 )}
+                {onShort && (
+                  <button
+                    className="pop-act wide"
+                    onClick={() => {
+                      onShort(words[sel[0]].start, words[sel[1]].end);
+                      close();
+                    }}
+                  >
+                    <span className="pop-icon">↗</span>
+                    {t('shortMake')}
+                  </button>
+                )}
               </div>
             )}
             {mode === 'menu' && (
               <>
                 <div className="pop-grid">
-                  {ACTIONS.map((k) => (
+                  {actions.map((k) => (
                     <button
                       key={k}
                       className="pop-act"
@@ -394,7 +412,8 @@ export function WordsPanel({
                     </button>
                   ))}
                 </div>
-                <div className="group-label pop-group">{t('moreEffects')}</div>
+                {!long && <div className="group-label pop-group">{t('moreEffects')}</div>}
+                {!long && (
                 <div className="pop-grid">
                   {SCENES.map((k) => (
                     <button
@@ -412,6 +431,7 @@ export function WordsPanel({
                     </button>
                   ))}
                 </div>
+                )}
                 <div className="pop-row">
                   <button className="pop-act wide" onClick={() => setMode('fix')}>
                     <span className="pop-icon">Aa</span>

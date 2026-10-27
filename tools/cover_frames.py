@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """cover_frames.py <project_dir> [--count 8]  ->  covers/c<NN>-<t>.jpg + covers/candidates.json (CoverCandidate[])
 
-Samples proxy.mp4 every 0.25 s (only inside edit.json segments if that file exists) and scores each frame:
+Samples proxy.mp4 every 0.25 s (a long YouTube video: every 2 s, picks >= 20 s apart, any frame size) (only inside edit.json segments if that file exists) and scores each frame:
 face size + horizontal centering, sharpness of the face crop (variance of Laplacian), eyes open and
 mouth calm (MediaPipe FaceLandmarker blendshapes), small smile bonus. Picks the top N, >= 1.5 s apart.
 """
@@ -34,7 +34,13 @@ def main():
     a = ap.parse_args()
     d = project_arg(a.project_dir)
     proxy = need(d, "proxy.mp4")
-    dur = duration_of(probe(proxy))
+    info = probe(proxy)
+    dur = duration_of(info)
+    global W, H, EVERY, MIN_GAP
+    pv = [s for s in info["streams"] if s.get("codec_type") == "video"][0]
+    W, H = int(pv["width"]), int(pv["height"])
+    if dur > 300:  # a long video: fewer samples, more spread out picks
+        EVERY, MIN_GAP = 2.0, 20.0
 
     segs = [(0.0, dur)]
     ej = os.path.join(d, "edit.json")

@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { checkEdit, type Problem } from '../src/shared/check';
 import { IG_PROMPTS } from '../src/shared/igPrompts';
 import { checkVideo } from '../server/videocheck';
+import { chapterList, formatTime, fullDescription, isLong, outputChapters } from '../src/shared/long';
 import { outputDuration, outputToSource, outputWords, sourceToOutput, totalFrames } from '../src/shared/time';
 import {
   FPS,
@@ -348,6 +349,7 @@ PICTURES AND MUSIC: use only her own board pictures (list_board) and her own mus
 NEVER delete a reel, a picture or a video file (there are no tools for it; she does that on the page herself). NEVER post anything to Instagram or TikTok; she posts herself.
 AFTER A NEW REEL: offer to proofread the subtitles (get_words, then fix_word for misheard brand and fashion words).
 MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then call check_video, look at the picture and tell her if it is ready to post or what you would fix; then show_in_finder and say she can AirDrop it to her phone.
+YOUTUBE (long videos, 20 to 40 min): a reel with format "long" (get_reel says so) is a YouTube video. It shows only picture, label and zoom effects; no hook, end card or Instagram caption. Use set_youtube for chapters (source seconds; first at 0, at least 3, 10 s or more apart, best every 2 to 5 minutes at a real topic change), title (max 100 chars, the search phrase first), description (2 to 4 short paragraphs in her voice, without the chapter list; it is added for you), name tag and switches. Read the video first with get_transcript. youtube_text gives the finished title + description to copy. make_thumbnail makes the 1280x720 thumbnail. make_clip on a long video makes a vertical Short (max 3 min) as a new reel; it is ready after a few minutes of analysis. make_video on a long video takes 20 to 40 minutes: start it, then use video_status.
 INSTAGRAM (before filming, after posting): for a reel idea, script or hooks, a caption check, a week plan, replies, DMs, carousels, stories or a profile check, call instagram_guide with the job and follow it. These tools work without Reel Studio open.
 If a tool says Reel Studio is not open, call open_reel_studio.`;
 
@@ -446,6 +448,15 @@ tool(
     }
     const L: string[] = [];
     L.push(`Reel ${slug}: "${e.title}" (language ${e.language}), state ${p.status.step}${p.parent ? `, clip of ${p.parent}` : ''}`);
+    if (isLong(e)) {
+      const Lg = e.long;
+      L.push(`FORMAT: long YouTube video (${e.source.width}x${e.source.height}). Only picture, label and zoom effects show. Use set_youtube / youtube_text / make_thumbnail.`);
+      L.push(`YouTube title: ${Lg?.title ? `"${Lg.title}"` : 'none'}; description: ${Lg?.description ? `${Lg.description.length} chars` : 'none'}; subtitles ${Lg?.subtitles ? 'on' : 'off'}, chapter cards ${Lg?.chapterCards ? 'on' : 'off'}, zoom jumps ${Lg?.zoomJumps ? 'on' : 'off'}; repeated takes cut: ${Lg?.retakes ?? 0}`);
+      L.push(`Chapters (source s -> video time): ${(Lg?.chapters ?? []).map((c) => `${c.at} s "${c.title}"`).join('; ') || 'none'}`);
+      L.push(`Chapter list for YouTube:\n${chapterList(e) || '(not valid yet: 3 or more chapters, each 10 s or longer)'}`);
+      L.push(Lg?.nameTag ? `Name tag: "${Lg.nameTag.name}"${Lg.nameTag.line ? ` / ${Lg.nameTag.line}` : ''} at ${Lg.nameTag.at} s for ${Lg.nameTag.duration} s` : 'Name tag: none');
+      L.push(Lg?.thumbnail ? `Thumbnail: frame ${Lg.thumbnail.t} s${Lg.thumbnail.title ? `, "${Lg.thumbnail.title}"` : ''}` : 'Thumbnail: not set');
+    }
     L.push(`Length: ${lengthOf(e).toFixed(1)} s (source video ${e.source.duration.toFixed(1)} s, ${e.segments.length} kept parts${e.endCard?.enabled ? `, + ${e.endCard.seconds} s end card` : ''})`);
     L.push(`Style: ${e.styleId ?? 'custom'}. Hook font ${e.style.hookFont} ${e.style.hookColor}, subtitles ${e.style.subtitleFont} ${e.style.subtitleStyle} ${e.style.subtitlePosition}, accent ${e.style.accentColor}, vibe ${e.style.vibe}`);
     L.push(`Toggles: ${Object.entries(e.toggles).map(([k, v]) => `${k} ${v ? 'on' : 'off'}`).join(', ')}`);
@@ -791,9 +802,71 @@ tool(
   { slug: slugArg, start: z.number().min(0), end: z.number().min(0), title: z.string().describe('Short title for the new reel') },
   WRITE,
   async ({ slug, start, end, title }) => {
-    const r = await api<{ slug: string }>('POST', `/api/projects/${enc(slug)}/clip`, { start, end, title });
+    const r = await api<{ slug: string; analysing?: boolean }>('POST', `/api/projects/${enc(slug)}/clip`, { start, end, title });
+    if (r.analysing) return `New vertical Short "${r.slug}" from the YouTube video. Reel Studio is preparing it now (a few minutes: crop around her face, subtitles, hook). Call get_reel on it later to improve its hook.`;
     const p = await getProject(r.slug);
     return `New reel "${r.slug}" (${p.edit ? lengthOf(p.edit).toFixed(1) : '?'} s). Improve its hook with update_reel, then check_reel.`;
+  },
+);
+
+// ----- YouTube (long videos) -----
+const longOnly = async (slug: string) => {
+  const p = await getProject(slug);
+  if (!p.edit) throw new UserError('This video is not ready yet.');
+  if (!isLong(p.edit)) throw new UserError('This is a reel, not a long YouTube video. Use update_reel for reels.');
+  return p;
+};
+tool(
+  'set_youtube',
+  'Long YouTube video only: set chapters (replaces the list; at = source seconds, the first one at 0), the YouTube title (max 100 chars) and description (without the chapter list), the name tag (lower third: name, optional line, at source seconds, duration s; null removes it), and switches: subtitles (burned in, off by default), chapterCards (chapter title on screen), zoomJumps. Only the fields you send change.',
+  {
+    slug: slugArg,
+    chapters: z.array(z.object({ at: z.number().min(0), title: z.string().min(1).max(80) })).optional(),
+    title: z.string().max(100).optional(),
+    description: z.string().max(4500).optional(),
+    nameTag: z.object({ name: z.string().min(1), line: z.string().optional(), at: z.number().min(0), duration: z.number().min(1).max(10) }).nullable().optional(),
+    subtitles: z.boolean().optional(),
+    chapterCards: z.boolean().optional(),
+    zoomJumps: z.boolean().optional(),
+  },
+  WRITE,
+  async ({ slug, ...ch }) => {
+    await longOnly(slug);
+    const { edit } = await mutate(slug, (e) => {
+      const L = { ...e.long!, ...Object.fromEntries(Object.entries(ch).filter(([, v]) => v !== undefined)) };
+      if (ch.chapters) L.chapters = [...ch.chapters].sort((a, b) => a.at - b.at).map((c) => ({ at: r2(c.at), title: c.title.trim() }));
+      return { ...e, long: L };
+    });
+    const list = chapterList(edit);
+    return afterChange(slug, `Changed: ${Object.keys(ch).join(', ') || 'nothing'}.${ch.chapters ? `\nChapters as YouTube will show them:\n${list || '(none: YouTube needs 3 or more, each 10 s or longer)'}` : ''}`);
+  },
+);
+tool('youtube_text', 'Long YouTube video only: the title and the full description with the chapter list (output times after the cuts), ready for her to copy into YouTube.', { slug: slugArg }, READ, async ({ slug }) => {
+  const p = await longOnly(slug);
+  const e = p.edit!;
+  const ch = outputChapters(e);
+  return `TITLE:\n${e.long?.title || e.title || '(no title yet)'}\n\nDESCRIPTION:\n${fullDescription(e) || '(no description yet)'}\n\n(${ch.length} chapters; length ${formatTime(lengthOf(e))})`;
+});
+tool(
+  'make_thumbnail',
+  'Long YouTube video only: make the 1280x720 thumbnail from the frame at t (source seconds; find good frames with find_cover_frames first) with a big title (max ~5 words) and optional italic accent line. Returns the picture so you can look at it.',
+  { slug: slugArg, t: z.number().min(0), title: z.string().max(60).optional(), accent: z.string().max(60).optional() },
+  WRITE,
+  async ({ slug, t, title, accent }, extra) => {
+    await longOnly(slug);
+    await mutate(slug, (e) => ({ ...e, long: { ...e.long!, thumbnail: { t: r2(t), ...(title ? { title } : {}), ...(accent ? { accent } : {}) } } }));
+    await api('POST', `/api/projects/${enc(slug)}/thumbnail/render`, {});
+    for (let i = 0; i < 90; i++) {
+      await sleep(2000);
+      await progress(extra, Math.min(0.95, i / 30), 'Making the thumbnail');
+      const s = await api<{ url: string | null; rendering: boolean; error: string | null }>('GET', `/api/projects/${enc(slug)}/thumbnail`);
+      if (s.rendering) continue;
+      if (s.error) return `The thumbnail could not be made: ${s.error}`;
+      const f = path.join(ROOT, 'projects', slug, 'covers', 'thumbnail.jpg');
+      if (!fs.existsSync(f)) return 'The thumbnail did not start. Try again.';
+      return [{ type: 'text', text: `Thumbnail ready: ${f}` }, { type: 'image', data: fs.readFileSync(f).toString('base64'), mimeType: 'image/jpeg' }];
+    }
+    return 'Still making the thumbnail. Call make_thumbnail again in a minute only if she asks; it may be ready on the page.';
   },
 );
 

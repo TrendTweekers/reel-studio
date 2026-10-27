@@ -44,6 +44,7 @@ export function AskClaude({
   onRunning,
   onClose,
   draft,
+  long,
 }: {
   slug: string;
   words: Word[];
@@ -53,6 +54,7 @@ export function AskClaude({
   onRunning: (running: boolean) => void;
   onClose: () => void;
   draft?: { text: string; id: number } | null;
+  long?: boolean; // a long YouTube video: its own examples, no Instagram helpers
 }) {
   const { t, lang } = useT();
   const [st, setSt] = useState<AskState>({ running: false, activity: null, messages: [] });
@@ -137,10 +139,15 @@ export function AskClaude({
     const out: string[] = [];
     if (word && board.length) out.push(fmt(t('askExBoard'), { f: board[0].file.replace(/\.[a-z0-9]+$/i, ''), w: word }));
     else if (word) out.push(fmt(t('askExPicture'), { w: word }));
+    if (long) {
+      out.unshift(t('askExLongChapters'));
+      out.push(t('askExLongShort'), t('askExLongThumb'));
+      return out;
+    }
     out.push(duration > 45 ? t('askExClips') : t('askExShorter'));
     out.push(t('askExCover'), t('askExStyle'));
     return out;
-  }, [words, segments, board, duration, t]);
+  }, [words, segments, board, duration, t, long]);
 
   const send = async () => {
     const m = text.trim();
@@ -200,13 +207,13 @@ export function AskClaude({
       <div className="ask-list" ref={list}>
         {st.messages.length === 0 ? (
           <div className="ask-empty">
-            <p className="muted">{t('askIntro')}</p>
+            <p className="muted">{long ? t('askIntroLong') : t('askIntro')}</p>
             <div className="ask-examples">
               {examples.map((ex) => (
                 <button
                   key={ex}
                   className="chip"
-                  onClick={() => fill(ex)}
+                  onClick={() => fill(ex, long && ex === t('askExLongChapters') ? 'yt-long' : undefined)}
                 >
                   {ex}
                 </button>
@@ -235,6 +242,7 @@ export function AskClaude({
         )}
       </div>
 
+      {!long && (
       <div className={`ig-helpers${igOpen ? ' open' : ''}`}>
         <button type="button" className="ig-toggle" onClick={toggleIg} aria-expanded={igOpen}>
           <span>{t('igHelpers')}</span>
@@ -253,6 +261,7 @@ export function AskClaude({
           </>
         )}
       </div>
+      )}
 
       {sendErr && <div className="msg error inline">{sendErr}</div>}
       <form

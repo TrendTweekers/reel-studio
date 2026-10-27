@@ -1,11 +1,12 @@
 // The checks for an edit, shared by `npm run check` (for Claude) and GET /api/projects/:slug/problems
 // (for the page, before "Make the video"). Each problem has a plain sentence for her and a technical
 // detail for Claude.
-import { HOOK_FONTS, NEEDS_CUTOUT, SFX_NAMES, SUBTITLE_FONTS, type Edit, type Word } from './types';
+import { HOOK_FONTS, LONG_KINDS, NEEDS_CUTOUT, SFX_NAMES, SUBTITLE_FONTS, type Edit, type Word } from './types';
 import { sourceToOutput } from './time';
+import { isLong, outputChapters } from './long';
 
 export type Problem = {
-  code: 'empty' | 'bad_segment' | 'bad_style' | 'music_missing' | 'picture_missing' | 'text_missing' | 'items_missing' | 'bad_effect' | 'cutout_missing' | 'bad_cover' | 'bad_fix';
+  code: 'empty' | 'bad_long' | 'bad_segment' | 'bad_style' | 'music_missing' | 'picture_missing' | 'text_missing' | 'items_missing' | 'bad_effect' | 'cutout_missing' | 'bad_cover' | 'bad_fix';
   text: string; // plain words, for Paulina
   detail: string; // technical, for Claude
   effectId?: string;
@@ -86,5 +87,19 @@ export const checkEdit = (
   }
   for (const k of Object.keys(edit.wordFixes ?? {}))
     if (!ctx.words[Number(k)]) add({ code: 'bad_fix', text: 'A word fix points to a word that is not there.', detail: `wordFixes: no word number ${k}` });
+  if (isLong(edit)) {
+    const L = edit.long;
+    if (!L) add({ code: 'bad_long', text: 'The YouTube settings are missing.', detail: 'format "long" needs edit.long (LongSettings)' });
+    for (const e of edit.effects ?? [])
+      if (!LONG_KINDS.includes(e.kind)) add({ code: 'bad_long', text: `"${NICE[e.kind] ?? e.kind}" is not shown in a YouTube video.`, detail: `effect ${e.id}: a long video shows only ${LONG_KINDS.join(', ')}`, effectId: e.id });
+    for (const c of L?.chapters ?? [])
+      if (!(c.at >= 0 && c.at <= dur) || !c.title?.trim()) add({ code: 'bad_long', text: 'A chapter has no title or is outside the video.', detail: `long.chapters: at=${c.at} must be 0..${dur.toFixed(1)} with a title` });
+    if (L && L.chapters.length && outputChapters(edit).length < 3)
+      add({ code: 'bad_long', text: 'YouTube shows chapters only when there are 3 or more, each 10 seconds or longer.', detail: 'long.chapters: fewer than 3 valid chapters after the cuts (first is moved to 0:00, ones under 10 s apart are dropped)' });
+    if (L?.nameTag && (!L.nameTag.name?.trim() || !(L.nameTag.at >= 0 && L.nameTag.at <= dur)))
+      add({ code: 'bad_long', text: 'The name tag has no name or is outside the video.', detail: 'long.nameTag needs name and at inside the video' });
+    if (L?.thumbnail && !(L.thumbnail.t >= 0 && L.thumbnail.t <= dur)) add({ code: 'bad_long', text: 'The thumbnail frame is outside the video.', detail: `long.thumbnail.t must be 0..${dur.toFixed(1)}` });
+    if ((L?.title?.length ?? 0) > 100) add({ code: 'bad_long', text: 'The YouTube title is longer than 100 characters.', detail: 'long.title max 100 characters' });
+  }
   return out;
 };

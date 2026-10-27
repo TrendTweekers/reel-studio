@@ -16,7 +16,8 @@ export type CoversState = {
 };
 export type Status = { step: Step; progress: number; message?: string; code?: string; position?: number };
 
-export type ProjectSummary = { slug: string; title: string; createdAt: string; status: Status; parent?: string | null };
+export type Format = 'reel' | 'long';
+export type ProjectSummary = { slug: string; title: string; createdAt: string; status: Status; parent?: string | null; format?: Format };
 export type RenderInfo = { file: string; createdAt: string; url: string };
 export type ProjectDetail = {
   slug: string;
@@ -30,7 +31,10 @@ export type ProjectDetail = {
   summary?: { pausesCut?: number; secondsSaved?: number; hook?: boolean | string | null; effects?: number } | null;
   range?: { start: number; end: number } | null;
   parent?: string | null;
+  format?: Format;
 };
+// The YouTube thumbnail (long videos): covers/thumbnail.jpg, 1280x720.
+export type ThumbnailState = { url: string | null; rendering: boolean; error: string | null };
 export type Problem = { code: string; text: string; detail?: string; effectId?: string };
 export type HistoryItem = { id: string; at: string; effects: number; seconds: number; by: 'page' | 'claude' | 'auto' };
 export type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; code?: string; stage?: string; editChangedSince?: boolean; stopped?: boolean; check?: 'started' | 'skipped' };
@@ -107,6 +111,10 @@ export const api = {
   findCovers: (slug: string) => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/covers/find`, {}),
   covers: (slug: string) => req<CoversState>('GET', `/api/projects/${enc(slug)}/covers`),
   renderCover: (slug: string) => req<unknown>('POST', `/api/projects/${enc(slug)}/covers/render`, {}),
+  thumbnail: (slug: string) => req<ThumbnailState>('GET', `/api/projects/${enc(slug)}/thumbnail`),
+  renderThumbnail: (slug: string) => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/thumbnail/render`, {}),
+  // A vertical Short from a part of a long video (source seconds). It becomes a new reel on Home.
+  clip: (slug: string, start: number, end: number, title: string) => req<{ slug: string }>('POST', `/api/projects/${enc(slug)}/clip`, { start, end, title }),
   autoedit: (slug: string, pauseGap?: number) =>
     req<{ editVersion: number }>('POST', `/api/projects/${enc(slug)}/autoedit`, { pauseGap }),
   cutout: (slug: string) => req<unknown>('POST', `/api/projects/${enc(slug)}/cutout`, {}),

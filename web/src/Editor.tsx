@@ -3,6 +3,7 @@ import type { PlayerRef } from '@remotion/player';
 import type { Edit, ReelProps } from '../../src/shared/types';
 import { FPS, HOOK_FONTS, SUBTITLE_FONTS } from '../../src/shared/types';
 import { outputFrames, outputToSource, sourceToOutput, totalFrames } from '../../src/shared/time';
+import { defaultLong, isLong, longSize, outputChapters } from '../../src/shared/long';
 import {
   api,
   HttpError,
@@ -30,6 +31,7 @@ import { VersionsMenu } from './VersionsMenu';
 import { EffectsPanel } from './EffectsPanel';
 import { EndCardPanel, PostPanel } from './PostPanels';
 import { BoardPanel, FontsPanel, HookPanel, MusicPanel, PausesPanel, RenderPanel, SfxPanel, VibePanel } from './Panels';
+import { ChaptersPanel, ShortsPanel, YoutubePanel, type ShortRange } from './LongPanels';
 
 export type Change = (fn: (e: Edit) => Edit, key?: string) => void;
 // file -> titles of the reels that use it (this reel included as "this reel").
@@ -53,7 +55,11 @@ const withDefaults = (e: Edit): Edit => ({
   sound: { effects: true, defaultSfx: 'pop', music: null, musicVolume: 0.25, duck: true, ...((e.sound ?? {}) as Partial<Edit['sound']>) },
   toggles: { zoomJumps: true, progressBar: false, grain: false, glowAboveHead: false, ...((e.toggles ?? {}) as Partial<Edit['toggles']>) },
   effects: Array.isArray(e.effects) ? e.effects : [],
+  ...(e.format === 'long' ? { long: { ...defaultLong(), ...(e.long ?? {}), chapters: Array.isArray(e.long?.chapters) ? e.long.chapters : [] } } : {}),
 });
+
+// Frames in the whole video: a long video has no end card.
+const videoFrames = (e: Edit) => (isLong(e) ? outputFrames(e.segments) : totalFrames(e));
 
 type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error' | 'waiting';
 
@@ -99,6 +105,8 @@ export function Editor({ slug }: { slug: string }) {
   const [askDraft, setAskDraft] = useState<{ text: string; id: number } | null>(null);
   const [summaryHidden, setSummaryHidden] = useState(() => readLS(`reel-studio-summary-${slug}`) === '1');
   const [lastLocalChange, setLastLocalChange] = useState(0);
+  // Long video: the part picked for a Short (source seconds).
+  const [shortRange, setShortRange] = useState<ShortRange | null>(null);
   const player = useRef<PlayerRef>(null);
 
   const setAskOpen = useCallback((v: boolean) => {
@@ -107,6 +115,8 @@ export function Editor({ slug }: { slug: string }) {
   }, []);
 
   const edit = state.edit;
+  // A long YouTube video (edit.format 'long'): other panels, a wide player, no reel-only extras.
+  const long = isLong(edit);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -412,7 +422,7 @@ export function Editor({ slug }: { slug: string }) {
         e.preventDefault();
         const step = (e.shiftKey ? FPS : 1) * (e.key === 'ArrowLeft' ? -1 : 1);
         const cur = stateRef.current.edit;
-        const total = cur ? totalFrames(cur) : 1;
+        const total = cur ? videoFrames(cur) : 1;
         if (p) p.seekTo(Math.max(0, Math.min(total - 1, p.getCurrentFrame() + step)));
       } else if (e.key === '?') {
         setShowKeys((v) => !v);
@@ -573,8 +583,8 @@ export function Editor({ slug }: { slug: string }) {
 
   // A long video where she said "następny" between reels: offer to split it.
   const splitCount = useMemo(
-    () => (detail && !detail.parent ? detail.words.filter((w) => /^n[aą]st[eę]pn[ya]\W*$/i.test(w.text.trim())).length : 0),
-    [detail],
+    () => (detail && !detail.parent && !isLong(state.edit) ? detail.words.filter((w) => /^n[aą]st[eę]pn[ya]\W*$/i.test(w.text.trim())).length : 0),
+    [detail, state.edit?.format], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [splitting, setSplitting] = useState(false);
   const runSplit = useCallback(async () => {
@@ -590,6 +600,29 @@ export function Editor({ slug }: { slug: string }) {
       setSplitting(false);
     }
   }, [flush, slug, showToast, t]);
+
+  // Long video: Claude writes the chapters, title, description and name tag (the yt-long skill).
+  const askLong = useCallback(async () => {
+    setAskOpen(true);
+    try {
+      await flush();
+      await api.askSend(slug, t('ytAskMsg'), 'yt-long');
+      onAskRunning(true);
+      showToast(t('ytAskSent'));
+    } catch (e) {
+      showToast(e instanceof HttpError && e.status === 409 ? t('askBusy') : t('askSendFailed'));
+    }
+  }, [setAskOpen, flush, slug, t, onAskRunning, showToast]);
+
+  // Words picked in the Words panel become the part for a Short.
+  const pickShort = useCallback(
+    (start: number, end: number) => {
+      setShortRange({ start, end });
+      showToast(t('shortPicked'));
+      setTimeout(() => document.getElementById('panel-shorts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    },
+    [showToast, t],
+  );
 
   const needMusic = useCallback(() => {
     document.getElementById('panel-music')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -678,16 +711,17 @@ export function Editor({ slug }: { slug: string }) {
               disabled={renderStarting}
               style={rendering ? { ['--pct' as string]: `${pct}%` } : undefined}
             >
-              {rendering ? (pct === 0 ? t('makingShort') : `${t('makingShort')} ${pct}%`) : t('topMakeIg')}
+              {rendering ? (pct === 0 ? t('makingShort') : `${t('makingShort')} ${pct}%`) : long ? t('topMakeYt') : t('topMakeIg')}
             </button>
           )
         )}
-        {edit && !rendering && (
+        {edit && !rendering && !long && (
           <button className="btn top-tiktok" onClick={() => void tkJob.start()} disabled={tkJob.starting} title={t('makeTiktok')}>
             {t('topTiktok')}
           </button>
         )}
-        {edit && (
+        {/* "My look" previews reel stills; a long video picks its look with the styles panel. */}
+        {edit && !long && (
           <button
             className="btn top-look"
             onClick={() => void openLook()}
@@ -734,19 +768,29 @@ export function Editor({ slug }: { slug: string }) {
   }
 
   // The panels in 5 groups, in the order she needs them. Every panel stays reachable.
-  const groups: { id: string; label: string; items: [string, string][] }[] = [
-    { id: 'look', label: t('grp_look'), items: [['style', t('style')], ['fonts', t('fonts')], ['vibe', t('vibe')]] },
-    { id: 'words', label: t('grp_words'), items: [['words', t('words')], ['effects', t('effectsInReel')], ['hook', t('hook')], ['pauses', t('pauses')]] },
-    { id: 'sound', label: t('grp_sound'), items: [['sfx', t('soundEffects')], ['music', t('music')]] },
-    { id: 'extras', label: t('grp_extras'), items: [['board', t('board')], ['endcard', t('endCard')], ['cover', t('cover')]] },
-    { id: 'finish', label: t('grp_finish'), items: [['post', t('post')], ['render', t('render')]] },
-  ];
+  const groups: { id: string; label: string; items: [string, string][] }[] = long
+    ? [
+        { id: 'look', label: t('grp_look'), items: [['style', t('style')], ['fonts', t('fonts')], ['vibe', t('vibe')]] },
+        { id: 'words', label: t('grp_wordsLong'), items: [['words', t('words')], ['effects', t('effectsInVideo')], ['pauses', t('pauses')], ['board', t('board')]] },
+        { id: 'chapters', label: t('grp_chapters'), items: [['chapters', t('chapters')]] },
+        { id: 'sound', label: t('grp_sound'), items: [['music', t('music')]] },
+        { id: 'youtube', label: t('grp_youtube'), items: [['youtube', t('grp_youtube')]] },
+        { id: 'shorts', label: t('grp_shorts'), items: [['shorts', t('grp_shorts')]] },
+        { id: 'finish', label: t('render'), items: [['render', t('render')]] },
+      ]
+    : [
+        { id: 'look', label: t('grp_look'), items: [['style', t('style')], ['fonts', t('fonts')], ['vibe', t('vibe')]] },
+        { id: 'words', label: t('grp_words'), items: [['words', t('words')], ['effects', t('effectsInReel')], ['hook', t('hook')], ['pauses', t('pauses')]] },
+        { id: 'sound', label: t('grp_sound'), items: [['sfx', t('soundEffects')], ['music', t('music')]] },
+        { id: 'extras', label: t('grp_extras'), items: [['board', t('board')], ['endcard', t('endCard')], ['cover', t('cover')]] },
+        { id: 'finish', label: t('grp_finish'), items: [['post', t('post')], ['render', t('render')]] },
+      ];
   const groupHead = (id: string) => {
     const g = groups.find((x) => x.id === id)!;
     return (
       <div className="panel-group-head" id={`group-${id}`}>
         <span className="pg-label">{g.label}</span>
-        {id === 'look' && (
+        {id === 'look' && !long && (
           <span className="pg-link">
             {t('lookGroupLink')}{' '}
             <button className="link-btn" onClick={openLook}>
@@ -759,7 +803,10 @@ export function Editor({ slug }: { slug: string }) {
   };
 
   const sum = detail.summary;
-  const showSummary = !!sum && !summaryHidden && lookDone !== null && (sum.pausesCut != null || sum.effects != null);
+  const longChapters = long ? outputChapters(edit).length : 0;
+  const showSummary = long
+    ? !summaryHidden && (!!sum || longChapters > 0 || !!edit.long?.retakes)
+    : !!sum && !summaryHidden && lookDone !== null && (sum.pausesCut != null || sum.effects != null);
   const hideSummary = () => {
     setSummaryHidden(true);
     writeLS(`reel-studio-summary-${slug}`, '1');
@@ -772,6 +819,20 @@ export function Editor({ slug }: { slug: string }) {
         effects: sum.effects ? fmt(t(sum.hook ? 'summaryEffects' : 'summaryEffectsOnly'), { n: plural(sum.effects, lang, t, 'effect') }) : '',
       })
     : '';
+  // Long video: "I cut 41 pauses (6.9 min shorter), removed 3 repeated takes and found 7 chapters."
+  const longSumText = (() => {
+    if (!long) return '';
+    const saved = sum?.secondsSaved ?? 0;
+    const savedText = saved >= 90 ? `${num(Math.round(saved / 6) / 10, lang, 1)} min` : `${num(Math.round(saved * 10) / 10, lang, 1)} s`;
+    const parts = [fmt(t('sumLongCut'), { pauses: plural(sum?.pausesCut ?? 0, lang, t, 'pause'), saved: savedText })];
+    if (edit.long?.retakes) parts.push(fmt(t('sumLongRetakes'), { n: plural(edit.long.retakes, lang, t, 'retake') }));
+    if (longChapters) parts.push(fmt(t('sumLongChapters'), { n: plural(longChapters, lang, t, 'chapter') }));
+    const last = parts.pop()!;
+    return `${parts.length ? `${parts.join(', ')} ${t('sumAnd')} ${last}` : last}.`;
+  })();
+  const toPanel = (id: string) => document.getElementById(`panel-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const currentSource = () => outputToSource((player.current?.getCurrentFrame() ?? 0) / FPS, edit.segments);
+
   const watch = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     player.current?.seekTo(0);
@@ -782,7 +843,7 @@ export function Editor({ slug }: { slug: string }) {
     <div className="editor">
       {header}
       {askRunning && <div className="claude-bar">{t('claudeEditing')}</div>}
-      <div className={`editor-body ${askOpen ? 'ask-open' : ''}`}>
+      <div className={`editor-body ${askOpen ? 'ask-open' : ''} ${long && longSize(edit).wide ? 'wide-stage' : ''}`}>
         <aside className="stage-col">
           <Preview playerRef={player} props={props} edit={edit} change={change} music={music} onFrame={setFrame} onNeedMusic={needMusic} />
         </aside>
@@ -790,7 +851,8 @@ export function Editor({ slug }: { slug: string }) {
           <nav className="section-nav">
             {groups.map((g) => (
               <span className="nav-group" key={g.id}>
-                <span className="nav-group-label">{g.label}</span>
+                {/* A group with one panel of the same name shows just the link. */}
+                {!(g.items.length === 1 && g.items[0][1] === g.label) && <span className="nav-group-label">{g.label}</span>}
                 {g.items.map(([id, label]) => (
                   <a
                     key={id}
@@ -806,7 +868,35 @@ export function Editor({ slug }: { slug: string }) {
               </span>
             ))}
           </nav>
-          {showSummary && sum && (
+          {showSummary && long && (
+            <div className="summary-card">
+              <span className="ask-spark" aria-hidden>
+                ✦
+              </span>
+              <div className="summary-body">
+                <p>{longSumText}</p>
+                <p className="summary-next">{t('sumLongNext')}</p>
+                <div className="summary-actions">
+                  <button className="btn summary-primary" onClick={watch}>
+                    ▶ {t('summaryWatch')}
+                  </button>
+                  <button className="btn" onClick={() => toPanel('chapters')}>
+                    {t('sumCheckChapters')}
+                  </button>
+                  <button className="btn" onClick={() => void askLong()} disabled={askRunning}>
+                    ✦ {t('sumAskYt')}
+                  </button>
+                  <button className="btn" onClick={() => void startRender()} disabled={rendering || renderStarting}>
+                    {rendering ? t('makingShort') : t('makeVideo')}
+                  </button>
+                  <button className="link-btn summary-dismiss" onClick={hideSummary}>
+                    {t('dismiss')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {showSummary && !long && sum && (
             <div className={`summary-card ${lookDone ? '' : 'first'}`}>
               <span className="ask-spark" aria-hidden>
                 ✦
@@ -854,8 +944,8 @@ export function Editor({ slug }: { slug: string }) {
           )}
           {groupHead('look')}
           <StylePanel slug={slug} edit={edit} styles={styles.styles} defaultStyle={styles.defaultStyle} reloadStyles={reloadStyles} applyStyle={runApplyStyle} />
-          <FontsPanel edit={edit} change={change} />
-          <VibePanel edit={edit} change={change} slug={slug} />
+          <FontsPanel edit={edit} change={change} long={long} />
+          <VibePanel edit={edit} change={change} slug={slug} long={long} />
           {groupHead('words')}
           <WordsPanel
             edit={edit}
@@ -870,6 +960,8 @@ export function Editor({ slug }: { slug: string }) {
             startCutout={startCutout}
             seekSource={seekSource}
             onAdded={(id) => setSelectedFx(id)}
+            long={long}
+            onShort={long ? pickShort : undefined}
           />
           <EffectsPanel
             edit={edit}
@@ -881,26 +973,60 @@ export function Editor({ slug }: { slug: string }) {
             setSelected={setSelectedFx}
             seekSource={seekSource}
             sfx={sfx}
+            long={long}
           />
-          <HookPanel edit={edit} change={change} />
-          <PausesPanel runAutoedit={runAutoedit} onSplit={detail.parent ? undefined : runSplit} splitting={splitting} />
-          {groupHead('sound')}
-          <SfxPanel edit={edit} change={change} sfx={sfx} />
-          <MusicPanel edit={edit} change={change} music={music} setMusic={setMusic} />
-          {groupHead('extras')}
-          <BoardPanel board={board} setBoard={setBoard} usedBy={usedBy} />
-          <EndCardPanel edit={edit} change={change} board={board} setBoard={setBoard} keywordsElsewhere={keywordsOther} />
-          <CoverPanel
-            slug={slug}
-            edit={edit}
-            change={change}
-            step={status?.step}
-            bump={bump}
-            currentSource={() => outputToSource((player.current?.getCurrentFrame() ?? 0) / FPS, edit.segments)}
-          />
-          {groupHead('finish')}
-          <PostPanel edit={edit} change={change} askDraft={askDraftFn} />
+          {long ? (
+            <>
+              <PausesPanel runAutoedit={runAutoedit} />
+              <BoardPanel board={board} setBoard={setBoard} usedBy={usedBy} />
+              {groupHead('chapters')}
+              <ChaptersPanel edit={edit} change={change} frame={frame} currentSource={currentSource} seekSource={seekSource} />
+              {groupHead('sound')}
+              <MusicPanel edit={edit} change={change} music={music} setMusic={setMusic} />
+              {groupHead('youtube')}
+              <YoutubePanel
+                slug={slug}
+                edit={edit}
+                change={change}
+                step={status?.step}
+                bump={bump}
+                currentSource={currentSource}
+                flush={flush}
+                onAsk={() => void askLong()}
+                askRunning={askRunning}
+              />
+              {groupHead('shorts')}
+              <ShortsPanel
+                slug={slug}
+                edit={edit}
+                words={detail.words}
+                range={shortRange}
+                setRange={setShortRange}
+                currentSource={currentSource}
+                seekSource={seekSource}
+                flush={flush}
+                onMade={(title) => showToast(fmt(t('shortDone'), { t: title }), { long: true })}
+                goHome={() => void goHome()}
+              />
+            </>
+          ) : (
+            <>
+              <HookPanel edit={edit} change={change} />
+              <PausesPanel runAutoedit={runAutoedit} onSplit={detail.parent ? undefined : runSplit} splitting={splitting} />
+              {groupHead('sound')}
+              <SfxPanel edit={edit} change={change} sfx={sfx} />
+              <MusicPanel edit={edit} change={change} music={music} setMusic={setMusic} />
+              {groupHead('extras')}
+              <BoardPanel board={board} setBoard={setBoard} usedBy={usedBy} />
+              <EndCardPanel edit={edit} change={change} board={board} setBoard={setBoard} keywordsElsewhere={keywordsOther} />
+              <CoverPanel slug={slug} edit={edit} change={change} step={status?.step} bump={bump} currentSource={currentSource} />
+              {groupHead('finish')}
+              <PostPanel edit={edit} change={change} askDraft={askDraftFn} />
+            </>
+          )}
+          {long && groupHead('finish')}
           <RenderPanel
+            long={long}
             slug={slug}
             jobs={{ instagram: igJob, tiktok: tkJob }}
             renders={detail.renders}
@@ -924,6 +1050,7 @@ export function Editor({ slug }: { slug: string }) {
             onRunning={onAskRunning}
             onClose={() => setAskOpen(false)}
             draft={askDraft}
+            long={long}
           />
         )}
       </div>

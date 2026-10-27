@@ -74,17 +74,17 @@ function FontButtons<F extends string>({ fonts, value, onPick, sample, three }: 
   );
 }
 
-export function FontsPanel({ edit, change }: P) {
+export function FontsPanel({ edit, change, long }: P & { long?: boolean }) {
   const { t } = useT();
   const st = edit.style;
   const setStyle = (patch: Partial<Edit['style']>, key?: string) => change((e) => ({ ...e, style: { ...e.style, ...patch } }), key);
   const custom = !SWATCHES.some((s) => s.c.toLowerCase() === st.hookColor.toLowerCase());
   return (
     <Panel id="fonts" title={t('fonts')}>
-      <Group label={t('hookFont')}>
+      <Group label={long ? t('titleFont') : t('hookFont')}>
         <FontButtons fonts={HOOK_FONTS} value={st.hookFont} onPick={(f) => setStyle({ hookFont: f })} sample={() => 'Aa Ślicznie'} three />
       </Group>
-      <Group label={t('hookColour')}>
+      <Group label={long ? t('titleColour') : t('hookColour')}>
         <div className="swatches">
           {SWATCHES.map((s) => (
             <button
@@ -113,6 +113,8 @@ export function FontsPanel({ edit, change }: P) {
           onChange={(v) => setStyle({ subtitleStyle: v })}
         />
       </Group>
+      {/* Long videos always put subtitles at the bottom. */}
+      {!long && (
       <Group label={t('position')}>
         <Chips
           value={st.subtitlePosition}
@@ -120,6 +122,7 @@ export function FontsPanel({ edit, change }: P) {
           onChange={(v) => setStyle({ subtitlePosition: v })}
         />
       </Group>
+      )}
     </Panel>
   );
 }
@@ -320,7 +323,7 @@ const VIBE_SWATCH: Record<Edit['style']['vibe'], string> = {
   editorial: 'linear-gradient(135deg,#1b1b1b,#6d6d6d 60%,#f6f1ea)',
 };
 
-export function VibePanel({ edit, change, slug }: P & { slug: string }) {
+export function VibePanel({ edit, change, slug, long }: P & { slug: string; long?: boolean }) {
   const { t, lang } = useT();
   const [measuring, setMeasuring] = useState(false);
   const [lightErr, setLightErr] = useState(false);
@@ -377,10 +380,13 @@ export function VibePanel({ edit, change, slug }: P & { slug: string }) {
           </>
         )}
       </div>
-      <div className="row gap">
-        <Check checked={edit.toggles.grain} label={t('grain')} onChange={(v) => setTog({ grain: v })} />
-        <Check checked={edit.toggles.progressBar} label={t('progressBar')} onChange={(v) => setTog({ progressBar: v })} />
-      </div>
+      {/* Grain and the progress bar are reel-only. */}
+      {!long && (
+        <div className="row gap">
+          <Check checked={edit.toggles.grain} label={t('grain')} onChange={(v) => setTog({ grain: v })} />
+          <Check checked={edit.toggles.progressBar} label={t('progressBar')} onChange={(v) => setTog({ progressBar: v })} />
+        </div>
+      )}
     </Panel>
   );
 }
@@ -485,7 +491,9 @@ export function RenderPanel({
   onFix,
   lastChange,
   onCheck,
+  long,
 }: {
+  long?: boolean; // a long YouTube video: one job, no TikTok version
   slug: string;
   jobs: { instagram: RenderJob; tiktok: RenderJob };
   renders: RenderInfo[];
@@ -531,8 +539,8 @@ export function RenderPanel({
         </div>
       )}
       <div className="jobs">
-        <JobBlock slug={slug} job={jobs.instagram} label={t('makeInstagram')} primary />
-        <JobBlock slug={slug} job={jobs.tiktok} label={t('makeTiktok')} primary={false} />
+        <JobBlock slug={slug} job={jobs.instagram} label={long ? t('makeYoutube') : t('makeInstagram')} primary />
+        {!long && <JobBlock slug={slug} job={jobs.tiktok} label={t('makeTiktok')} primary={false} />}
       </div>
       <div className="video-check">
         {autoCheck !== null && (

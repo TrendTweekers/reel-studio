@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { Reel } from '../../src/remotion/Reel';
-import type { Edit, ReelProps } from '../../src/shared/types';
+import { LongVideo } from '../../src/remotion/long/LongVideo';
+import type { Edit, LongSettings, ReelProps } from '../../src/shared/types';
 import { FPS, HEIGHT, WIDTH } from '../../src/shared/types';
-import { totalFrames } from '../../src/shared/time';
+import { outputFrames, totalFrames } from '../../src/shared/time';
+import { defaultLong, formatTime, isLong, longSize, outputChapters } from '../../src/shared/long';
 import type { FileItem } from './api';
 import type { Change } from './Editor';
 import { useT } from './i18n';
@@ -27,7 +29,18 @@ export function Preview({
   onNeedMusic: () => void;
 }) {
   const { t } = useT();
-  const total = totalFrames(edit);
+  // A long YouTube video: its own composition and size, no end card, chapter marks on the scrubber.
+  const long = isLong(edit);
+  const size = long ? longSize(edit) : { width: WIDTH, height: HEIGHT, wide: false };
+  const total = long ? outputFrames(edit.segments) : totalFrames(edit);
+  const chapters = long ? outputChapters(edit) : [];
+  const ls = { ...defaultLong(), ...(edit.long ?? {}) };
+  const setLong = (patch: Partial<LongSettings>) => change((e) => ({ ...e, long: { ...defaultLong(), ...(e.long ?? {}), ...patch } }));
+  const seek = (f: number) => {
+    const c = Math.max(0, Math.min(total - 1, Math.round(f)));
+    setFrame(c);
+    playerRef.current?.seekTo(c);
+  };
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const lastMusic = useRef<string | null>(edit.sound.music);
@@ -75,18 +88,21 @@ export function Preview({
   };
 
   const pct = total > 1 ? (frame / (total - 1)) * 100 : 0;
+  const nowSec = frame / FPS;
+  const nowChapter = [...chapters].reverse().find((c) => c.at <= nowSec + 0.01);
+  const clock = long ? formatTime : (s: number) => fmtTime(s);
 
   return (
-    <div className="stage">
+    <div className={`stage ${size.wide ? 'wide' : ''}`}>
       <div className="stage-frame">
         <Player
           ref={playerRef}
-          component={Reel}
+          component={long ? LongVideo : Reel}
           inputProps={props}
           durationInFrames={total}
           fps={FPS}
-          compositionWidth={WIDTH}
-          compositionHeight={HEIGHT}
+          compositionWidth={size.width}
+          compositionHeight={size.height}
           controls={false}
           clickToPlay
           doubleClickToFullscreen
@@ -108,34 +124,67 @@ export function Preview({
             </svg>
           )}
         </button>
-        <input
-          className="scrubber"
-          type="range"
-          min={0}
-          max={Math.max(0, total - 1)}
-          step={1}
-          value={Math.min(frame, total - 1)}
-          style={{ ['--pct' as string]: `${pct}%` }}
-          onChange={(e) => {
-            const f = Number(e.target.value);
-            setFrame(f);
-            playerRef.current?.seekTo(f);
-          }}
-          aria-label={t('scrubber')}
-        />
+        {long && (
+          <button className="icon-btn skip" onClick={() => seek(frame - 10 * FPS)} aria-label={t('skipBack')} title={t('skipBack')}>
+            −10
+          </button>
+        )}
+        <div className="scrub-wrap">
+          <input
+            className="scrubber"
+            type="range"
+            min={0}
+            max={Math.max(0, total - 1)}
+            step={1}
+            value={Math.min(frame, total - 1)}
+            style={{ ['--pct' as string]: `${pct}%` }}
+            onChange={(e) => seek(Number(e.target.value))}
+            aria-label={t('scrubber')}
+          />
+          {/* Chapter starts as small marks on the timeline; click one to jump there. */}
+          {chapters.map((c) => (
+            <button
+              key={c.source}
+              className={`chapter-mark ${nowChapter === c ? 'now' : ''}`}
+              style={{ left: `${total > 1 ? Math.min(100, ((c.at * FPS) / (total - 1)) * 100) : 0}%` }}
+              title={`${formatTime(c.at)} ${c.title}`}
+              aria-label={`${formatTime(c.at)} ${c.title}`}
+              onClick={() => seek(c.at * FPS)}
+            />
+          ))}
+        </div>
+        {long && (
+          <button className="icon-btn skip" onClick={() => seek(frame + 10 * FPS)} aria-label={t('skipFwd')} title={t('skipFwd')}>
+            +10
+          </button>
+        )}
         <span className="time">
-          {fmtTime(frame / FPS)} <span className="muted">/ {fmtTime(total / FPS)}</span>
+          {clock(nowSec)} <span className="muted">/ {clock(total / FPS)}</span>
         </span>
       </div>
+      {long && nowChapter && (
+        <p className="now-chapter">
+          <span className="muted">{t('nowChapter')}:</span> {nowChapter.title}
+        </p>
+      )}
 
       <p className="keys-hint">{t('spaceHint')}</p>
-      <div className="toggles-head">{t('inThisReel')}</div>
-      <div className="toggles">
-        <Toggle on={edit.sound.effects} label={t('togSfx')} set={(v) => change((e) => ({ ...e, sound: { ...e.sound, effects: v } }))} />
-        <Toggle on={musicOn} label={t('togMusic')} set={toggleMusic} />
-        <Toggle on={edit.toggles.zoomJumps} label={t('togZoom')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, zoomJumps: v } }))} />
-        <Toggle on={edit.toggles.glowAboveHead} label={t('togGlow')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, glowAboveHead: v } }))} />
-      </div>
+      <div className="toggles-head">{long ? t('inThisVideo') : t('inThisReel')}</div>
+      {long ? (
+        <div className="toggles">
+          <Toggle on={musicOn} label={t('togMusic')} set={toggleMusic} />
+          <Toggle on={ls.zoomJumps} label={t('togZoom')} set={(v) => setLong({ zoomJumps: v })} />
+          <Toggle on={ls.chapterCards} label={t('togChapterCards')} set={(v) => setLong({ chapterCards: v })} />
+          <Toggle on={ls.subtitles} label={t('togSubs')} set={(v) => setLong({ subtitles: v })} />
+        </div>
+      ) : (
+        <div className="toggles">
+          <Toggle on={edit.sound.effects} label={t('togSfx')} set={(v) => change((e) => ({ ...e, sound: { ...e.sound, effects: v } }))} />
+          <Toggle on={musicOn} label={t('togMusic')} set={toggleMusic} />
+          <Toggle on={edit.toggles.zoomJumps} label={t('togZoom')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, zoomJumps: v } }))} />
+          <Toggle on={edit.toggles.glowAboveHead} label={t('togGlow')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, glowAboveHead: v } }))} />
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildModel, type Rect } from '../src/remotion/model';
 import { FPS, type ReelProps } from '../src/shared/types';
+import { chapterList, isLong, longSize } from '../src/shared/long';
 
 export type CheckReport = {
   file: string;
@@ -50,6 +51,8 @@ const ranges = (hits: { f: number; what: string }[], gap = FPS) => {
 };
 
 export const layoutFindings = (props: ReelProps): string[] => {
+  // A long YouTube video has its own calm layout (no hook, stickers or reel safe areas).
+  if (isLong(props.edit)) return chapterList(props.edit) ? [] : ['There is no valid chapter list (YouTube needs 3 or more chapters, the first at 0:00, each 10 s or longer).'];
   const m = buildModel(props);
   const hits: { f: number; what: string }[] = [];
   for (let f = 0; f < m.total; f += 3) {
@@ -81,7 +84,7 @@ export const layoutFindings = (props: ReelProps): string[] => {
 };
 
 // Brightness over time (limited range 16..235) + loudness of the finished file.
-const pictureAndSound = async (video: string, duration: number) => {
+const pictureAndSound = async (video: string, duration: number, long: boolean) => {
   const out: string[] = [];
   const st = await run('ffmpeg', ['-v', 'error', '-i', video, '-vf', 'fps=2,scale=180:-2,signalstats,metadata=print:file=-', '-an', '-f', 'null', '-']);
   const y = [...st.out.matchAll(/lavfi\.signalstats\.YAVG=([\d.]+)/g)].map((x) => Number(x[1]));
@@ -96,14 +99,14 @@ const pictureAndSound = async (video: string, duration: number) => {
   const loud = { lufs: lufs ? Number(lufs[1]) : null, peak: peak ? Number(peak[1]) : null };
   if (loud.lufs !== null && loud.lufs < -18) out.push(`The sound is quiet (${loud.lufs} LUFS; Instagram is about -14).`);
   if (loud.lufs !== null && loud.lufs > -10) out.push(`The sound is very loud (${loud.lufs} LUFS).`);
-  if (duration > 90) out.push(`The video is ${Math.round(duration)} s long; reels under 60 s usually keep more viewers.`);
+  if (!long && duration > 90) out.push(`The video is ${Math.round(duration)} s long; reels under 60 s usually keep more viewers.`);
   return { findings: out, loudness: loud };
 };
 
 // 12 frames: the moments with effects first, the rest spread evenly; 4 columns x 3 rows.
 const contactSheet = async (video: string, duration: number, props: ReelProps, outFile: string) => {
-  const m = buildModel(props);
-  const fx = m.effects.map((e) => (e.from + e.frames * 0.5) / FPS).filter((t) => t < duration - 0.2);
+  const wide = isLong(props.edit) && longSize(props.edit).wide;
+  const fx = isLong(props.edit) ? [] : buildModel(props).effects.map((e) => (e.from + e.frames * 0.5) / FPS).filter((t) => t < duration - 0.2);
   const even = Array.from({ length: 12 }, (_, i) => ((i + 0.5) / 12) * duration);
   const picked: number[] = [];
   for (const t of [...fx, ...even]) if (picked.length < 12 && picked.every((p) => Math.abs(p - t) > 1.5)) picked.push(t);
@@ -112,7 +115,7 @@ const contactSheet = async (video: string, duration: number, props: ReelProps, o
   const tmp = fs.mkdtempSync(path.join(path.dirname(outFile), '.sheet-'));
   try {
     for (const [i, t] of times.entries())
-      await run('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', video, '-frames:v', '1', '-vf', 'scale=360:640', path.join(tmp, `${String(i).padStart(2, '0')}.jpg`)]);
+      await run('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', video, '-frames:v', '1', '-vf', wide ? 'scale=480:270' : 'scale=360:640', path.join(tmp, `${String(i).padStart(2, '0')}.jpg`)]);
     const r = await run('ffmpeg', ['-v', 'error', '-y', '-pattern_type', 'glob', '-i', path.join(tmp, '*.jpg'), '-vf', 'tile=4x3:padding=6:color=white', '-frames:v', '1', '-q:v', '3', outFile]);
     if (r.code !== 0) throw new Error(`contact sheet failed: ${r.err.slice(-200)}`);
   } finally {
@@ -126,7 +129,7 @@ export const checkVideo = async (video: string, props: ReelProps, checkDir: stri
   const probe = await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', video]);
   const duration = Number(probe.out.trim()) || 0;
   const sheet = path.join(checkDir, `${path.basename(video, '.mp4')}.jpg`);
-  const [times, ps] = await Promise.all([contactSheet(video, duration, props, sheet), pictureAndSound(video, duration)]);
+  const [times, ps] = await Promise.all([contactSheet(video, duration, props, sheet), pictureAndSound(video, duration, isLong(props.edit))]);
   return { file: path.basename(video), sheet, times, findings: [...layoutFindings(props), ...ps.findings], loudness: ps.loudness };
 };
 

@@ -15,6 +15,15 @@ paper cut, magazine cover, chart grow, orbit and green screen. *Po pierwszym fil
 pokazuje Twoją rolkę w różnych czcionkach, kolorach, napisach i efektach: klikasz, co Ci pasuje,
 i to staje się Twoim stylem.*
 
+**YouTube videos (long).** Choose "YouTube video" when you add a 20 to 40 minute video. Reel
+Studio cuts pauses and the parts you said twice, finds rough chapters, and keeps the picture wide.
+Claude writes the chapters, title and description; you make a thumbnail and Shorts from the best
+parts. A long video needs about 8 to 10 GB of free space while you work on it. *Filmy na YouTube
+(długie): wybierz „Film na YouTube”, gdy dodajesz film 20 do 40 minut. Pauzy i powtórzone
+fragmenty są wycięte, rozdziały wstępnie znalezione, obraz zostaje poziomy. Claude pisze
+rozdziały, tytuł i opis; Ty robisz miniaturkę i Shorty z najlepszych fragmentów. Długi film
+potrzebuje około 8 do 10 GB wolnego miejsca, gdy nad nim pracujesz.*
+
 Before you film and after you post, Claude also helps with Instagram: hooks and scripts, a
 week plan, caption checks, replies and DMs. *Przed nagraniem i po publikacji Claude pomaga też
 z Instagramem: hooki i scenariusze, plan tygodnia, opisy, odpowiedzi i wiadomości.*

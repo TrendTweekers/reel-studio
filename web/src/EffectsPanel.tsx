@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Edit, Effect, EffectPosition, SfxName } from '../../src/shared/types';
-import { SCENE_KINDS, SFX_NAMES } from '../../src/shared/types';
+import { LONG_KINDS, SCENE_KINDS, SFX_NAMES } from '../../src/shared/types';
 import { sourceToOutput } from '../../src/shared/time';
 import type { FileItem, SfxItem } from './api';
 import type { Change } from './Editor';
@@ -30,6 +30,7 @@ export function EffectsPanel({
   setSelected,
   seekSource,
   sfx,
+  long,
 }: {
   edit: Edit;
   change: Change;
@@ -40,16 +41,17 @@ export function EffectsPanel({
   setSelected: (id: string | null) => void;
   seekSource: (t: number) => void;
   sfx: SfxItem[];
+  long?: boolean; // a long YouTube video shows only LONG_KINDS and has no sound effects
 }) {
   const { t } = useT();
-  const list = sortEffects(edit.effects);
+  const list = sortEffects(long ? edit.effects.filter((fx) => LONG_KINDS.includes(fx.kind)) : edit.effects);
   const boardUrl = (file: string) => board.find((b) => b.file === file)?.url ?? `/board/${encodeURIComponent(file)}`;
 
   const update = (id: string, patch: Partial<Effect>, key?: string) =>
     change((e) => ({ ...e, effects: e.effects.map((fx) => (fx.id === id ? { ...fx, ...patch } : fx)) }), key ? `${id}:${key}` : undefined);
 
   return (
-    <Panel id="effects" title={t('effectsInReel')}>
+    <Panel id="effects" title={long ? t('effectsInVideo') : t('effectsInReel')}>
       {!list.length && <p className="muted">{t('noEffects')}</p>}
       <ul className="fx-list">
         {list.map((fx) => {
@@ -82,7 +84,7 @@ export function EffectsPanel({
                   ) : null}
                 </span>
               </button>
-              {isSel && <FxDetail fx={fx} update={update} change={change} board={board} setBoard={setBoard} usedBy={usedBy} edit={edit} sfx={sfx} boardUrl={boardUrl} seekSource={seekSource} onDelete={() => setSelected(null)} />}
+              {isSel && <FxDetail long={long} fx={fx} update={update} change={change} board={board} setBoard={setBoard} usedBy={usedBy} edit={edit} sfx={sfx} boardUrl={boardUrl} seekSource={seekSource} onDelete={() => setSelected(null)} />}
             </li>
           );
         })}
@@ -103,7 +105,9 @@ function FxDetail({
   boardUrl,
   seekSource,
   onDelete,
+  long,
 }: {
+  long?: boolean;
   fx: Effect;
   update: (id: string, patch: Partial<Effect>, key?: string) => void;
   change: Change;
@@ -213,6 +217,7 @@ function FxDetail({
         </div>
       </div>
 
+      {!long && (
       <label className="field">
         <span>{t('sound')}</span>
         <div className="sound-row">
@@ -238,6 +243,7 @@ function FxDetail({
           </select>
         </div>
       </label>
+      )}
 
       <div className="fx-actions">
         <button

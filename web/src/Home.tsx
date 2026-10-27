@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, mediaUrls, upload, type ProjectSummary, type Status, type Step } from './api';
+import { api, mediaUrls, upload, type Format, type ProjectSummary, type Status, type Step } from './api';
 import { errText, fmt, useT, type StrKey } from './i18n';
 import { go, LangSwitch } from './App';
 import type { StyleItem } from './api';
@@ -58,10 +58,27 @@ export function Home() {
   const [over, setOver] = useState(false);
   const [query, setQuery] = useState('');
   const [batch, setBatch] = useState(false);
+  // Reel (vertical, short) or a long YouTube video. Remembered on this Mac.
+  const [format, setFormatState] = useState<Format>(() => {
+    try {
+      return localStorage.getItem('reel-studio-format') === 'long' ? 'long' : 'reel';
+    } catch {
+      return 'reel';
+    }
+  });
+  const setFormat = (f: Format) => {
+    setFormatState(f);
+    try {
+      localStorage.setItem('reel-studio-format', f);
+    } catch {
+      /* private window */
+    }
+  };
+  const long = format === 'long';
   const [styles, setStyles] = useState<{ styles: StyleItem[]; defaultStyle: string } | null>(null);
   const [lookDone, setLookDone] = useState(true);
   // The video she just dropped, while it is being edited: a wide card with the time it takes.
-  const [working, setWorking] = useState<{ slug: string; duration: number | null; since: number } | null>(null);
+  const [working, setWorking] = useState<{ slug: string; duration: number | null; since: number; long: boolean } | null>(null);
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!working) return;
@@ -127,12 +144,13 @@ export function Home() {
     }
     const job = upload<{ slug: string }>('/api/projects', 'video', [file], (p) => setUp({ name: file.name, progress: p }), {
       'X-File-Name': encodeURIComponent(file.name),
-      ...(batch ? { 'x-batch': '1' } : {}),
+      // "Several reels" splits a phone video; it never applies to a long YouTube video.
+      ...(long ? { 'x-format': 'long' } : batch ? { 'x-batch': '1' } : {}),
     });
     job.promise
       .then((r) => {
         justUploaded.current = r.slug;
-        setWorking({ slug: r.slug, duration: dropDuration.current, since: Date.now() });
+        setWorking({ slug: r.slug, duration: dropDuration.current, since: Date.now(), long });
         return load();
       })
       .catch(() => setErr(t('uploadFailed')))
@@ -157,8 +175,20 @@ export function Home() {
       </header>
 
       <main className="home-main">
+        <div className="format-pick" role="radiogroup" aria-label={t('fmtQ')}>
+          <span className="format-q">{t('fmtQ')}</span>
+          {(['reel', 'long'] as const).map((f) => (
+            <button key={f} role="radio" aria-checked={format === f} className={`format-opt ${format === f ? 'on' : ''}`} onClick={() => setFormat(f)} disabled={!!up}>
+              <span className={`format-shape ${f}`} aria-hidden />
+              <span className="format-text">
+                <span className="format-name">{f === 'long' ? t('fmtLong') : t('fmtReel')}</span>
+                <span className="format-sub">{f === 'long' ? t('fmtLongSub') : t('fmtReelSub')}</span>
+              </span>
+            </button>
+          ))}
+        </div>
         <div
-          className={`dropzone ${over ? 'over' : ''} ${up ? 'busy' : ''}`}
+          className={`dropzone ${over ? 'over' : ''} ${up ? 'busy' : ''} ${long ? 'long' : ''}`}
           onDragOver={(e) => {
             e.preventDefault();
             setOver(true);
@@ -197,31 +227,45 @@ export function Home() {
           ) : (
             <>
               <div className="drop-icon" aria-hidden>
-                <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
-                  <rect x="14" y="5" width="20" height="38" rx="4" />
-                  <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                {long ? (
+                  <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
+                    <rect x="3" y="11" width="42" height="26" rx="4" />
+                    <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
+                    <rect x="14" y="5" width="20" height="38" rx="4" />
+                    <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
               </div>
-              <div className="drop-title">{t('dropTitle')}</div>
-              <div className="muted">{t('dropHint')}</div>
+              <div className="drop-title">{long ? t('dropTitleLong') : t('dropTitle')}</div>
+              <div className="muted">{long ? t('dropHintLong') : t('dropHint')}</div>
             </>
           )}
           {err && <div className="error-text">{err}</div>}
         </div>
 
-        <div className="batch-row">
-          <Check checked={batch} onChange={setBatch} label={t('batchLabel')} />
-          <HelpTip text={t('batchTip')} />
-        </div>
+        {!long && (
+          <div className="batch-row">
+            <Check checked={batch} onChange={setBatch} label={t('batchLabel')} />
+            <HelpTip text={t('batchTip')} />
+          </div>
+        )}
 
         {working && workingReel && workingReel.status.step !== 'ready' && workingReel.status.step !== 'error' && (
           <div className="working-card" role="status">
             <div className="working-text">
-              <h2 className="serif-title">{t('workingTitle')}</h2>
+              <h2 className="serif-title">{working.long ? t('workingTitleLong') : t('workingTitle')}</h2>
               <p>
-                {working.duration
-                  ? fmt(t('workingTime'), { n: Math.max(1, Math.round(working.duration / 15)) })
-                  : t('workingTimeGeneric')}
+                {working.long
+                  ? working.duration
+                    ? // About 1 minute of waiting per 2 to 3 minutes of video (measured on her Mac).
+                      fmt(t('workingTimeLong'), { a: Math.max(1, Math.round(working.duration / 180)), b: Math.max(2, Math.round(working.duration / 120)) })
+                    : t('workingTimeLongGeneric')
+                  : working.duration
+                    ? fmt(t('workingTime'), { n: Math.max(1, Math.round(working.duration / 15)) })
+                    : t('workingTimeGeneric')}
               </p>
               <p className="muted small">{fmt(t('workingElapsed'), { t: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` })}</p>
             </div>
@@ -297,6 +341,7 @@ function ReelCard({ p, all, reload }: { p: ProjectSummary; all: ProjectSummary[]
   const clipWord =
     clips === 1 ? t('clipsOne') : lang === 'pl' && [2, 3, 4].includes(clips % 10) && ![12, 13, 14].includes(clips % 100) ? t('clipsMany') : t('clipsMany5');
   const urls = mediaUrls(p.slug);
+  const long = p.format === 'long';
 
   useEffect(() => {
     if (!menu) return;
@@ -327,13 +372,14 @@ function ReelCard({ p, all, reload }: { p: ProjectSummary; all: ProjectSummary[]
   };
 
   return (
-    <article className={`reel-card ${ready ? 'ready' : ''} ${parent ? 'clip' : ''} ${busy ? 'busy' : ''}`} onClick={() => ready && !renaming && go(`/p/${encodeURIComponent(p.slug)}`)}>
+    <article className={`reel-card ${ready ? 'ready' : ''} ${parent ? 'clip' : ''} ${busy ? 'busy' : ''} ${long ? 'long' : ''}`} onClick={() => ready && !renaming && go(`/p/${encodeURIComponent(p.slug)}`)}>
       <div className="thumb">
         {p.status.step !== 'uploading' && p.status.step !== 'normalize' && !isError ? (
           <video src={`${urls.video}#t=0.5`} preload="metadata" muted playsInline />
         ) : (
           <div className="thumb-empty" />
         )}
+        {long && <span className="yt-badge">{t('ytBadge')}</span>}
         {!ready && !isError && (
           <div className="thumb-over">
             <StepList status={p.status} />

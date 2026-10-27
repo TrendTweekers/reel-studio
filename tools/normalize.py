@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""normalize.py <project_dir>  ->  proxy.mp4 (1080x1920, 30fps CFR, H.264, AAC 48k stereo) + audio16k.wav
+"""normalize.py <project_dir> [--long]  ->  proxy.mp4 (1080x1920, 30fps CFR, H.264, AAC 48k stereo) + audio16k.wav
+
+--long (a YouTube video): no crop. Wide sources become 1920x1080, tall ones 1080x1920 (fit + pad), and the
+picture is stored a little smaller (crf 21), because a 30 minute proxy at crf 18 would take several GB.
 
 Order of the video chain is always: fps -> scale/crop to 1080x1920 -> colour (HDR tone map). Doing the
 colour step last means it only touches 1080x1920 at 30 fps (about 5x faster than at 4K 60 fps).
@@ -162,8 +165,9 @@ def face_crop_x(src, dur, dw, dh, sw):
 
 def main():
     if len(sys.argv) < 2:
-        fail("usage: normalize.py <project_dir>")
+        fail("usage: normalize.py <project_dir> [--long]")
     d = project_arg(sys.argv[1])
+    long_video = "--long" in sys.argv[2:]
     src = find_source(d)
     info = probe(src)
     vs = [s for s in info["streams"] if s.get("codec_type") == "video" and s.get("disposition", {}).get("attached_pic", 0) != 1]
@@ -181,13 +185,20 @@ def main():
 
     # Geometry: cover-crop to 9:16. Landscape: crop around her face, not the centre.
     crop_x, crop_mode = None, "center"
-    if dw > dh > 0:
+    out_w, out_h = W, H
+    if long_video:
+        out_w, out_h = (1920, 1080) if dw >= dh else (1080, 1920)
+        crop_mode = "none"
+        geometry = (f"setsar=1,fps={FPS},scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                    f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black")
+    elif dw > dh > 0:
         sw = int(round(dw * H / dh / 2)) * 2
         if sw > W:
             crop_x = face_crop_x(src, dur, dw, dh, sw)
             crop_mode = "face" if crop_x is not None else "center"
-    crop = f"crop={W}:{H}" + (f":x={crop_x}:y=0" if crop_x is not None else "")
-    geometry = f"setsar=1,fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,{crop}"
+    if not long_video:
+        crop = f"crop={W}:{H}" + (f":x={crop_x}:y=0" if crop_x is not None else "")
+        geometry = f"setsar=1,fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,{crop}"
 
     # Attempt list: (label, colour tail, global args, tonemap name). Hardware decode is tried first on macOS.
     trc = (v.get("color_transfer") or "").lower()
@@ -220,7 +231,7 @@ def main():
                      # Audio starts at 0 like the video: pads silence when the audio track starts late.
                      "-af", "aresample=async=1:first_pts=0",
                      "-r", str(FPS), "-fps_mode", "cfr",
-                     "-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                     "-c:v", "libx264", "-crf", "21" if long_video else "18", "-preset", "veryfast", "-pix_fmt", "yuv420p",
                      # A keyframe every second: the editor and the render jump to cut points fast.
                      "-g", "30", "-keyint_min", "30", "-sc_threshold", "0",
                      "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
