@@ -28,7 +28,11 @@ const SFX_GAIN: Record<string, number> = {
 const sfxFor = (e: TimedEffect, fallback: SfxName): SfxName | null => {
   if (e.sfx === 'none') return null;
   if (e.sfx && e.sfx !== 'default') return e.sfx;
-  if (e.kind === 'zoom' || e.kind === 'flash') return 'whoosh';
+  if (e.kind === 'zoom' || e.kind === 'flash' || e.kind === 'zoomthrough' || e.kind === 'vertigo' || e.kind === 'pullback') return 'whoosh';
+  if (e.kind === 'papercut') return 'sticker-slap';
+  if (e.kind === 'cover' || e.kind === 'framebreak') return 'camera-shutter';
+  if (e.kind === 'greenscreen' || e.kind === 'doodle') return 'soft-pop';
+  if (e.kind === 'ui') return 'ding';
   if (e.kind === 'checklist') return null; // one click per tick instead
   return fallback;
 };
@@ -44,7 +48,7 @@ export const Sound: React.FC = () => {
   if (sound.effects) {
     for (const e of model.effects) {
       // A sticker that found no room is skipped, and so is its sound.
-      if ((e.kind === 'picture' || e.kind === 'phone' || e.kind === 'label') && !e.rect) continue;
+      if ((e.kind === 'picture' || e.kind === 'phone' || e.kind === 'label' || e.kind === 'chart') && !e.rect) continue;
       const name = sfxFor(e, sound.defaultSfx);
       if (name) cues.push({ at: e.from, name, key: e.id });
       if (e.kind === 'checklist' && e.sfx !== 'none') {

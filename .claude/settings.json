@@ -4,6 +4,7 @@
       "Bash(npm run words *)",
       "Bash(npm run transcript *)",
       "Bash(npm run check *)",
+      "Bash(npm run look *)",
       "Bash(curl -s http://localhost:8787/*)",
       "Bash(curl -s localhost:8787/*)",
       "Bash(curl -s -X POST localhost:8787/*)",

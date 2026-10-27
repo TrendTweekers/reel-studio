@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { Edit, EndCard, PostText } from '../../src/shared/types';
 import type { FileItem } from './api';
 import type { Change } from './Editor';
-import { fmt, STRINGS, useT } from './i18n';
+import { fmt, numFixed, STRINGS, useT } from './i18n';
 import { PictureGrid } from './PictureGrid';
 import { Check, Group, Panel } from './ui';
 
@@ -32,7 +32,7 @@ export function EndCardPanel({
   setBoard: (b: FileItem[]) => void;
   keywordsElsewhere: Map<string, string[]>;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const ec = edit.endCard;
   const [picking, setPicking] = useState(false);
   // Default texts follow the reel's language, not the page language.
@@ -86,7 +86,7 @@ export function EndCardPanel({
             </label>
             <label className="field">
               <span>
-                {t('endSeconds')} <b>{ec.seconds.toFixed(1)} s</b>
+                {t('endSeconds')} <b>{numFixed(ec.seconds, lang, 1)} s</b>
               </span>
               <input type="range" min={2} max={4} step={0.5} value={ec.seconds} onChange={(e) => set({ seconds: Number(e.target.value) }, 'seconds')} />
             </label>

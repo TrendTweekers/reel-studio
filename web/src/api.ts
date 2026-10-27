@@ -1,4 +1,4 @@
-import type { Edit, FaceSample, Word } from '../../src/shared/types';
+import type { Edit, Effect, FaceSample, Word } from '../../src/shared/types';
 import type { EditingStyle } from '../../src/shared/styles';
 
 export type StyleItem = EditingStyle & { own: boolean };
@@ -33,7 +33,7 @@ export type ProjectDetail = {
 };
 export type Problem = { code: string; text: string; detail?: string; effectId?: string };
 export type HistoryItem = { id: string; at: string; effects: number; seconds: number; by: 'page' | 'claude' | 'auto' };
-export type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; code?: string; stage?: string; editChangedSince?: boolean };
+export type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; code?: string; stage?: string; editChangedSince?: boolean; stopped?: boolean };
 export type Variant = 'instagram' | 'tiktok';
 export type FileItem = { file: string; url: string };
 export type SfxItem = { name: string; url: string };
@@ -134,6 +134,19 @@ export const api = {
   deleteBoard: (file: string) => req<unknown>('DELETE', `/api/board/${enc(file)}`),
   music: () => req<FileItem[]>('GET', '/api/music'),
   sfx: () => req<SfxItem[]>('GET', '/api/sfx'),
+  // "My look" page
+  lookStill: (slug: string, body: LookStillReq) => req<{ url: string }>('POST', `/api/projects/${enc(slug)}/look-still`, body),
+  look: () => req<{ lookDone: boolean; styleId: string | null }>('GET', '/api/look'),
+  saveLook: (body: LookSaveReq) => req<{ ok: boolean; id: string; style: Edit['style']; toggles: Edit['toggles']; brandLines: string[] }>('POST', '/api/look', body),
+};
+
+export type LookPatch = { style?: Partial<Edit['style']>; hook?: Edit['hook']; toggles?: Partial<Edit['toggles']> };
+export type LookStillReq = { patch: LookPatch; effect?: Omit<Effect, 'id'>; t?: number; moment?: 'hook' | 'caption' | 'effect' | 'mid' };
+export type LookSaveReq = {
+  slug: string;
+  style: Partial<Edit['style']>;
+  toggles: Partial<Edit['toggles']>;
+  brand: { summary: string; effects: string[]; more: string[]; transitions: string[]; notes: string };
 };
 
 // Multipart upload with progress. Uses XMLHttpRequest because fetch cannot report upload progress.

@@ -85,7 +85,7 @@ speech model reads that file for every new video. Tell her what you fixed in pla
 
 ## The Ask box on the page
 
-The Ask box on the editor page can only run: `npm run words|transcript|check`, `curl -s` against
+The Ask box on the editor page can only run: `npm run words|transcript|check|look`, `curl -s` against
 localhost:8787, `ls`, `open` of files inside the app folder, the ig-* scripts
 (`.venv/bin/python .claude/skills/ig-*/...`) and writing files in `instagram/`. Anything else (import of a file
 from Downloads, building a new effect, `npx`, `python3`) must be done from the "Ask Claude" window

@@ -16,7 +16,10 @@ export const isEdited = (edit: Edit, s: EditingStyle) => {
   return edit.sound.effects !== s.sound.effects || edit.sound.defaultSfx !== s.sound.defaultSfx;
 };
 
-export const styleName = (s: EditingStyle, lang: string) => (lang === 'pl' ? s.namePl || s.name : s.name || s.namePl);
+// Polish names for built-in styles where English is not natural (the shared file keeps the old ones).
+const PL_STYLE_NAMES: Record<string, string> = { girlblog: 'Pamiętnik', film: 'Klisza' };
+export const styleName = (s: EditingStyle, lang: string) =>
+  lang === 'pl' ? (PL_STYLE_NAMES[s.id] && s.namePl === s.name ? PL_STYLE_NAMES[s.id] : s.namePl || s.name) : s.name || s.namePl;
 const styleDesc = (s: EditingStyle, lang: string) => (lang === 'pl' ? s.descriptionPl || s.description : s.description || s.descriptionPl);
 
 // A small tile that previews the look: hook in its font and colour, a subtitle sample, a vibe hint.

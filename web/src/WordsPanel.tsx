@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Edit, EffectKind, Word } from '../../src/shared/types';
-import { FPS } from '../../src/shared/types';
+import { FPS, NEEDS_CUTOUT } from '../../src/shared/types';
 import { outputToSource, sourceToOutput } from '../../src/shared/time';
 import type { FileItem } from './api';
 import type { Change } from './Editor';
@@ -10,6 +10,8 @@ import { PictureGrid } from './PictureGrid';
 import { fmtTime, Panel } from './ui';
 
 const ACTIONS: EffectKind[] = ['picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'emoji', 'checklist', 'flash'];
+// Bigger moments: scenes and animated overlays (the @viiolini set).
+const SCENES: EffectKind[] = ['chart', 'cover', 'framebreak', 'papercut', 'greenscreen', 'orbit', 'doodle', 'ui', 'vertigo', 'pullback', 'zoomthrough'];
 const COLLAPSE_MIN = 6; // cut stretches at least this long fold into one line
 
 const fold = (s: string) =>
@@ -54,6 +56,7 @@ export function WordsPanel({
   const [open, setOpen] = useState<number | null>(null);
   const [sel, setSel] = useState<[number, number] | null>(null);
   const [mode, setMode] = useState<Mode>('menu');
+  const [pickFor, setPickFor] = useState<EffectKind>('picture');
   const [fix, setFix] = useState('');
   const [fixAll, setFixAll] = useState(true);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -242,7 +245,7 @@ export function WordsPanel({
     const fx = newEffect(kind, w, textOf(open), image);
     change((e) => ({ ...e, effects: sortEffects([...e.effects, fx]) }));
     onAdded(fx.id);
-    if (kind === 'behind' && !hasCutout) {
+    if (NEEDS_CUTOUT.includes(kind) && !hasCutout) {
       startCutout();
       setNote(t('makingCutout'));
       return;
@@ -377,7 +380,33 @@ export function WordsPanel({
               <>
                 <div className="pop-grid">
                   {ACTIONS.map((k) => (
-                    <button key={k} className="pop-act" onClick={() => (k === 'picture' ? setMode('picture') : add(k))}>
+                    <button
+                      key={k}
+                      className="pop-act"
+                      onClick={() => {
+                        if (k !== 'picture') return add(k);
+                        setPickFor('picture');
+                        setMode('picture');
+                      }}
+                    >
+                      <span className="pop-icon">{KIND_ICON[k]}</span>
+                      {t(`act_${k}` as StrKey)}
+                    </button>
+                  ))}
+                </div>
+                <div className="group-label pop-group">{t('moreEffects')}</div>
+                <div className="pop-grid">
+                  {SCENES.map((k) => (
+                    <button
+                      key={k}
+                      className="pop-act"
+                      title={t(`tip_${k}` as StrKey)}
+                      onClick={() => {
+                        if (k !== 'greenscreen' || !board.length) return add(k); // no pictures yet: cream studio
+                        setPickFor('greenscreen');
+                        setMode('picture');
+                      }}
+                    >
                       <span className="pop-icon">{KIND_ICON[k]}</span>
                       {t(`act_${k}` as StrKey)}
                     </button>
@@ -408,7 +437,12 @@ export function WordsPanel({
             {mode === 'picture' && (
               <div className="pop-board">
                 <div className="group-label">{t('changePicture')}</div>
-                <PictureGrid board={board} setBoard={setBoard} onPick={(f) => add('picture', f)} />
+                <PictureGrid board={board} setBoard={setBoard} onPick={(f) => add(pickFor, f)} />
+                {pickFor === 'greenscreen' && (
+                  <button className="link-btn" onClick={() => add('greenscreen')}>
+                    {t('studioBackdrop')}
+                  </button>
+                )}
               </div>
             )}
             {mode === 'fix' && (

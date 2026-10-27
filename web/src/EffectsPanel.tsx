@@ -1,19 +1,23 @@
 import { useState } from 'react';
 import type { Edit, Effect, EffectPosition, SfxName } from '../../src/shared/types';
-import { SFX_NAMES } from '../../src/shared/types';
+import { SCENE_KINDS, SFX_NAMES } from '../../src/shared/types';
 import { sourceToOutput } from '../../src/shared/time';
 import type { FileItem, SfxItem } from './api';
 import type { Change } from './Editor';
 import { KIND_ICON, sortEffects } from './editState';
-import { useT, type StrKey } from './i18n';
+import { numFixed, useT, type StrKey } from './i18n';
 import { Chips, fmtTime, Panel, playPreview } from './ui';
 import { PictureGrid } from './PictureGrid';
 import type { UsedBy } from './Editor';
 import { sfxLabel } from './i18n';
 
 const POSITIONS: EffectPosition[] = ['auto', 'top', 'bottom', 'left', 'right', 'above-head', 'center'];
-const TEXT_KINDS = new Set(['label', 'glass', 'behind', 'chapter', 'emoji']);
-const PICTURE_KINDS = new Set(['picture', 'phone']);
+const TEXT_KINDS = new Set(['label', 'glass', 'behind', 'chapter', 'emoji', 'cover', 'chart', 'ui', 'doodle']);
+const PICTURE_KINDS = new Set(['picture', 'phone', 'greenscreen', 'framebreak', 'papercut', 'orbit']);
+const NEEDS_PICTURE = new Set(['picture', 'phone']); // the others may have none (greenscreen: cream studio)
+const ITEM_KINDS = new Set(['checklist', 'cover', 'orbit', 'ui', 'chart']);
+// Effects that place themselves around her (no position choice).
+const SELF_PLACED = new Set<string>([...SCENE_KINDS, 'flash', 'zoom', 'orbit', 'doodle', 'ui']);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function EffectsPanel({
@@ -71,7 +75,7 @@ export function EffectsPanel({
                 <span className="fx-preview">
                   {PICTURE_KINDS.has(fx.kind) && fx.image ? (
                     <img src={boardUrl(fx.image)} alt="" className="fx-thumb" onError={(e) => e.currentTarget.classList.add('missing')} />
-                  ) : fx.kind === 'checklist' ? (
+                  ) : ITEM_KINDS.has(fx.kind) && !fx.text ? (
                     <span className="fx-text">{(fx.items ?? []).filter(Boolean).join(' · ')}</span>
                   ) : fx.text ? (
                     <span className="fx-text">{fx.text}</span>
@@ -112,8 +116,8 @@ function FxDetail({
   seekSource: (t: number) => void;
   onDelete: () => void;
 }) {
-  const { t } = useT();
-  const [picking, setPicking] = useState(!fx.image && PICTURE_KINDS.has(fx.kind));
+  const { t, lang } = useT();
+  const [picking, setPicking] = useState(!fx.image && NEEDS_PICTURE.has(fx.kind));
   const usedHere = new Set(edit.effects.filter((e) => e.id !== fx.id && e.image).map((e) => e.image!));
 
   const nudge = (d: number) => {
@@ -133,6 +137,11 @@ function FxDetail({
               {fx.image ? <img src={boardUrl(fx.image)} alt="" /> : <span>+</span>}
             </button>
             <span className="muted small">{t('changePicture')}</span>
+            {fx.image && !NEEDS_PICTURE.has(fx.kind) && (
+              <button className="link-btn" onClick={() => update(fx.id, { image: undefined })}>
+                {t('noPicture')}
+              </button>
+            )}
           </div>
           {picking && (
             <PictureGrid
@@ -156,9 +165,9 @@ function FxDetail({
         </label>
       )}
 
-      {fx.kind === 'checklist' && (
+      {ITEM_KINDS.has(fx.kind) && (
         <label className="field">
-          <span>{t('items')}</span>
+          <span>{fx.kind === 'checklist' ? t('items') : t(`items_${fx.kind}` as StrKey)}</span>
           <textarea rows={4} value={(fx.items ?? []).join('\n')} onChange={(e) => update(fx.id, { items: e.target.value.split('\n') }, 'items')} />
         </label>
       )}
@@ -166,13 +175,13 @@ function FxDetail({
       {fx.kind === 'zoom' && (
         <label className="field">
           <span>
-            {t('zoomAmount')} <b>{(fx.scale ?? 1.25).toFixed(2)}×</b>
+            {t('zoomAmount')} <b>{numFixed(fx.scale ?? 1.25, lang, 2)}×</b>
           </span>
           <input type="range" min={1.05} max={1.8} step={0.05} value={fx.scale ?? 1.25} onChange={(e) => update(fx.id, { scale: Number(e.target.value) }, 'scale')} />
         </label>
       )}
 
-      {fx.kind !== 'flash' && fx.kind !== 'zoom' && (
+      {!SELF_PLACED.has(fx.kind) && (
         <div className="group">
           <div className="group-label">{t('position')}</div>
           <Chips
@@ -186,7 +195,7 @@ function FxDetail({
       <div className="fx-grid">
         <label className="field">
           <span>
-            {t('duration')} <b>{fx.duration.toFixed(1)} s</b>
+            {t('duration')} <b>{numFixed(fx.duration, lang, 1)} s</b>
           </span>
           <input type="range" min={0.1} max={8} step={0.1} value={fx.duration} onChange={(e) => update(fx.id, { duration: Number(e.target.value) }, 'duration')} />
         </label>
@@ -196,7 +205,7 @@ function FxDetail({
             <button className="btn" onClick={() => nudge(-0.1)}>
               {t('earlier')}
             </button>
-            <span className="mono">{fx.at.toFixed(2)} s</span>
+            <span className="mono">{numFixed(fx.at, lang, 2)} s</span>
             <button className="btn" onClick={() => nudge(0.1)}>
               {t('later')}
             </button>

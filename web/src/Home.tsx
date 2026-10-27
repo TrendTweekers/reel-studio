@@ -8,7 +8,7 @@ import { Check, HelpTip } from './ui';
 
 const STEPS: Step[] = ['normalize', 'transcribe', 'faces', 'autoedit', 'ready'];
 
-export function StepList({ status }: { status: Status }) {
+export function StepList({ status, notes }: { status: Status; notes?: boolean }) {
   const { t } = useT();
   const idx = STEPS.indexOf(status.step);
   if (status.step === 'queued') {
@@ -29,6 +29,7 @@ export function StepList({ status }: { status: Status }) {
                 <span style={{ width: `${Math.round((status.progress || 0) * 100)}%` }} />
               </span>
             )}
+            {notes && state === 'now' && s === 'transcribe' && <span className="step-note">{t('longestStep')}</span>}
           </li>
         );
       })}
@@ -58,8 +59,19 @@ export function Home() {
   const [query, setQuery] = useState('');
   const [batch, setBatch] = useState(false);
   const [styles, setStyles] = useState<{ styles: StyleItem[]; defaultStyle: string } | null>(null);
+  const [lookDone, setLookDone] = useState(true);
+  // The video she just dropped, while it is being edited: a wide card with the time it takes.
+  const [working, setWorking] = useState<{ slug: string; duration: number | null; since: number } | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!working) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [working]);
+  const dropDuration = useRef<number | null>(null);
   useEffect(() => {
     api.styles().then(setStyles).catch(() => {});
+    api.look().then((r) => setLookDone(r.lookDone), () => {});
   }, []);
   const input = useRef<HTMLInputElement>(null);
   // The video she just dropped: open it by itself as soon as its first edit is ready.
@@ -73,8 +85,12 @@ export function Home() {
       const mine = justUploaded.current && list.find((p) => p.slug === justUploaded.current);
       if (mine && mine.status.step === 'ready') {
         justUploaded.current = null;
+        setWorking(null);
         window.location.hash = `#/p/${mine.slug}`;
-      } else if (mine && mine.status.step === 'error') justUploaded.current = null;
+      } else if (mine && mine.status.step === 'error') {
+        justUploaded.current = null;
+        setWorking(null);
+      }
     } catch {
       /* banner handles server down */
     }
@@ -90,6 +106,25 @@ export function Home() {
     if (!file || up) return;
     setErr(null);
     setUp({ name: file.name, progress: 0 });
+    // Read the length on this computer (no upload needed) for the time estimate.
+    dropDuration.current = null;
+    try {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      const u = URL.createObjectURL(file);
+      v.onloadedmetadata = () => {
+        if (isFinite(v.duration) && v.duration > 0) {
+          const d = v.duration;
+          dropDuration.current = d;
+          setWorking((w) => (w ? { ...w, duration: d } : w));
+        }
+        URL.revokeObjectURL(u);
+      };
+      v.onerror = () => URL.revokeObjectURL(u);
+      v.src = u;
+    } catch {
+      /* no estimate then */
+    }
     const job = upload<{ slug: string }>('/api/projects', 'video', [file], (p) => setUp({ name: file.name, progress: p }), {
       'X-File-Name': encodeURIComponent(file.name),
       ...(batch ? { 'x-batch': '1' } : {}),
@@ -97,13 +132,18 @@ export function Home() {
     job.promise
       .then((r) => {
         justUploaded.current = r.slug;
+        setWorking({ slug: r.slug, duration: dropDuration.current, since: Date.now() });
         return load();
       })
       .catch(() => setErr(t('uploadFailed')))
       .finally(() => setUp(null));
   };
 
+  // "Choose your look": after her first reel is ready, until she has saved a look once.
+  const firstReady = (projects ?? []).find((p) => p.status.step === 'ready' || p.status.step === 'cutout' || p.status.step === 'covers');
   const q = query.trim().toLowerCase();
+  const workingReel = working ? (projects ?? []).find((p) => p.slug === working.slug) : undefined;
+  const elapsed = working ? Math.floor((Date.now() - working.since) / 1000) : 0;
   const shown = (projects ?? []).filter((p) => !q || (p.title || '').toLowerCase().includes(q) || p.slug.includes(q));
 
   return (
@@ -174,7 +214,35 @@ export function Home() {
           <HelpTip text={t('batchTip')} />
         </div>
 
-        {styles && styles.styles.length > 0 && (
+        {working && workingReel && workingReel.status.step !== 'ready' && workingReel.status.step !== 'error' && (
+          <div className="working-card" role="status">
+            <div className="working-text">
+              <h2 className="serif-title">{t('workingTitle')}</h2>
+              <p>
+                {working.duration
+                  ? fmt(t('workingTime'), { n: Math.max(1, Math.round(working.duration / 15)) })
+                  : t('workingTimeGeneric')}
+              </p>
+              <p className="muted small">{fmt(t('workingElapsed'), { t: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` })}</p>
+            </div>
+            <StepList status={workingReel.status} notes />
+          </div>
+        )}
+
+        {!lookDone && firstReady && (
+          <div className="look-invite">
+            <div>
+              <h2 className="serif-title">{t('lookHomeTitle')}</h2>
+              <p className="muted">{t('lookHomeText')}</p>
+            </div>
+            <button className="btn primary" onClick={() => go(`/look/${encodeURIComponent(firstReady.slug)}`)}>
+              {t('lookHomeBtn')}
+            </button>
+          </div>
+        )}
+
+        {/* Only after she saved her own look: before that, "My look" (with pictures) is the way to choose. */}
+        {lookDone && styles && styles.styles.length > 0 && (
           <div className="default-style">
             <span>{t('styleNewUse')}:</span>
             <select
@@ -332,7 +400,21 @@ function ReelCard({ p, all, reload }: { p: ProjectSummary; all: ProjectSummary[]
             <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Escape' && setRenaming(false)} />
           </form>
         ) : (
-          <div className="card-title">{p.title || t('untitled')}</div>
+          <div className="card-title">
+            <span>{p.title || t('untitled')}</span>
+            <button
+              className="title-pencil small"
+              title={t('rename')}
+              aria-label={t('rename')}
+              onClick={(e) => {
+                e.stopPropagation();
+                setName(p.title);
+                setRenaming(true);
+              }}
+            >
+              ✎
+            </button>
+          </div>
         )}
         {clips > 0 && (
           <div className="clip-count">
@@ -343,7 +425,12 @@ function ReelCard({ p, all, reload }: { p: ProjectSummary; all: ProjectSummary[]
           {isError ? (
             <span className="error-text">
               {t('step_error')}
-              {p.status.code || p.status.message ? `: ${errText(t, p.status.code, p.status.message)}` : ''}
+              {(() => {
+                // No "Something went wrong: Something went wrong".
+                const why = p.status.code || p.status.message ? errText(t, p.status.code, p.status.message) : '';
+                const same = (a: string, b: string) => a.replace(/[.!…\s]+$/, '').toLowerCase() === b.replace(/[.!…\s]+$/, '').toLowerCase();
+                return why && !same(why, t('step_error')) ? `: ${why}` : '';
+              })()}
               <button
                 className="link-btn"
                 onClick={(e) => {

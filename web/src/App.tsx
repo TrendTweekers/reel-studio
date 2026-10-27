@@ -3,9 +3,12 @@ import { onServerState } from './api';
 import { defaultLang, LangContext, STRINGS, type Lang, type StrKey } from './i18n';
 import { Home } from './Home';
 import { Editor } from './Editor';
+import { LookBuilder } from './LookBuilder';
 
-// Tiny hash router: #/ is home, #/p/<slug> is the editor. Hash keeps the server simple.
+// Tiny hash router: #/ is home, #/p/<slug> is the editor, #/look/<slug> is the "My look" page. Hash keeps the server simple.
 const parseRoute = () => {
+  const look = location.hash.match(/^#\/look\/([^/?#]+)/);
+  if (look) return { name: 'look' as const, slug: decodeURIComponent(look[1]) };
   const m = location.hash.match(/^#\/p\/([^/?#]+)/);
   return m ? { name: 'editor' as const, slug: decodeURIComponent(m[1]) } : { name: 'home' as const };
 };
@@ -46,7 +49,7 @@ export function App() {
           {ctx.t('serverDown')}
         </div>
       )}
-      {route.name === 'editor' ? <Editor key={route.slug} slug={route.slug} /> : <Home />}
+      {route.name === 'editor' ? <Editor key={route.slug} slug={route.slug} /> : route.name === 'look' ? <LookBuilder key={route.slug} slug={route.slug} /> : <Home />}
     </LangContext.Provider>
   );
 }

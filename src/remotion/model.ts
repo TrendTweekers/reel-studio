@@ -233,6 +233,7 @@ export const glassMetrics = (text: string) => {
 
 export const PICTURE_SIZE = { w: 340, h: 404 };
 export const PHONE_SIZE = { w: 290, h: 594 };
+export const CHART_SIZE = { w: 760, h: 620 };
 export const labelSize = (text: string) => ({ w: Math.min(560, 70 + text.length * 25), h: 86 });
 
 export const captionFontSize = (style: string) => (style === 'pop' ? 66 : style === 'box' ? 58 : 64);
@@ -588,10 +589,10 @@ export const buildModel = (props: ReelProps): Model => {
     if (rect) placed.push({ rect, from: e.from, to, kind: e.kind });
   }
 
-  // ---- 6. Cards: checklist / glass. At least 85% so a phone can read them.
+  // ---- 6. Cards: checklist / glass / chart. At least 85% so a phone can read them.
   for (const e of effects) {
-    if (e.kind !== 'checklist' && e.kind !== 'glass') continue;
-    const baseSize = e.kind === 'checklist' ? checklistSize(e) : glassMetrics((e.text ?? '').trim());
+    if (e.kind !== 'checklist' && e.kind !== 'glass' && e.kind !== 'chart') continue;
+    const baseSize = e.kind === 'checklist' ? checklistSize(e) : e.kind === 'chart' ? CHART_SIZE : glassMetrics((e.text ?? '').trim());
     const to = e.from + e.frames;
     const head = headSpan(e.from, to);
     const away = e.side;

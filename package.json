@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "check": "tsx scripts/check-edit.ts",
     "words": "tsx scripts/words.ts",
-    "transcript": "tsx scripts/transcript.ts"
+    "transcript": "tsx scripts/transcript.ts",
+    "look": "tsx scripts/fx-still.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

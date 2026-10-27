@@ -18,7 +18,7 @@ import {
   type StyleItem,
 } from './api';
 import { editReducer, initialEditState, merge3 } from './editState';
-import { errText, fmt, useT } from './i18n';
+import { errText, fmt, num, plural, useT } from './i18n';
 import { go, LangSwitch } from './App';
 import { StepList } from './Home';
 import { Preview } from './Preview';
@@ -73,7 +73,7 @@ const writeLS = (k: string, v: string) => {
 };
 
 export function Editor({ slug }: { slug: string }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [state, dispatch] = useReducer(editReducer, initialEditState);
   const [detail, setDetail] = useState<Omit<ProjectDetail, 'edit'> | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -84,7 +84,12 @@ export function Editor({ slug }: { slug: string }) {
   const [styles, setStyles] = useState<{ styles: StyleItem[]; defaultStyle: string }>({ styles: [], defaultStyle: '' });
   const [usedOther, setUsedOther] = useState<UsedBy>(new Map());
   const [keywordsOther, setKeywordsOther] = useState<Map<string, string[]>>(new Map());
-  const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  // Has she saved her own look yet? null = not known yet. False: the summary card sends her to "My look".
+  const [lookDone, setLookDone] = useState<boolean | null>(null);
+  // Right after a video is done: the top button becomes "Download video" for 2 minutes.
+  const [doneFlash, setDoneFlash] = useState<{ url: string; id: number } | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [selectedFx, setSelectedFx] = useState<string | null>(null);
   const [frame, setFrame] = useState(0);
@@ -115,10 +120,34 @@ export function Editor({ slug }: { slug: string }) {
   const lastAskAt = useRef(0); // when Claude last worked, to name the other writer correctly
   const serverOp = useRef(false);
 
-  const showToast = useCallback((msg: string) => setToast({ msg, id: Date.now() }), []);
+  const showToast = useCallback((msg: string, opts?: Omit<Toast, 'msg' | 'id'>) => setToast({ msg, id: Date.now(), ...opts }), []);
+  useEffect(() => {
+    api.look().then(
+      (r) => setLookDone(r.lookDone),
+      () => setLookDone(true),
+    );
+  }, []);
+  useEffect(() => {
+    if (!doneFlash) return;
+    const id = setTimeout(() => setDoneFlash(null), 120_000);
+    return () => clearTimeout(id);
+  }, [doneFlash]);
+  // Back from the "My look" page: say what happened.
+  const hasEdit = !!state.edit;
+  useEffect(() => {
+    if (!hasEdit) return;
+    try {
+      const v = sessionStorage.getItem('reel-studio-look-saved');
+      if (!v) return;
+      sessionStorage.removeItem('reel-studio-look-saved');
+      showToast(t(v === 'reel' ? 'lookSavedToastReel' : 'lookSavedToast'));
+    } catch {
+      /* ignore */
+    }
+  }, [hasEdit, showToast, t]);
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), Math.max(2600, toast.msg.length * 70));
+    const id = setTimeout(() => setToast(null), toast.long ? 15_000 : Math.max(2600, toast.msg.length * 70));
     return () => clearTimeout(id);
   }, [toast]);
 
@@ -246,6 +275,10 @@ export function Editor({ slug }: { slug: string }) {
   const goHome = async () => {
     await flush();
     go('/');
+  };
+  const openLook = async () => {
+    await flush();
+    go(`/look/${encodeURIComponent(slug)}`);
   };
 
   // ---------- first load ----------
@@ -499,8 +532,21 @@ export function Editor({ slug }: { slug: string }) {
   }, []);
 
   // ---------- render (the video): Instagram and TikTok jobs ----------
-  const igJob = useRenderJob(slug, 'instagram', flush, refreshMeta);
-  const tkJob = useRenderJob(slug, 'tiktok', flush, refreshMeta);
+  // A run ended: say it clearly, wherever she is on the page.
+  const onRenderEvent = useCallback(
+    (kind: 'done' | 'stopped', s: RenderState) => {
+      if (kind === 'stopped') {
+        showToast(t('renderStopped'), { long: true });
+        return;
+      }
+      if (s.url) setDoneFlash({ url: s.url, id: Date.now() });
+      showToast(t('renderReadyToast'), s.url ? { long: true, href: s.url, link: `${t('download')} ↓` } : { long: true });
+      setTimeout(() => document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    },
+    [showToast, t],
+  );
+  const igJob = useRenderJob(slug, 'instagram', flush, refreshMeta, onRenderEvent);
+  const tkJob = useRenderJob(slug, 'tiktok', flush, refreshMeta, onRenderEvent);
   const render = igJob.render;
   const renderStarting = igJob.starting;
   const startRender = igJob.start;
@@ -583,6 +629,7 @@ export function Editor({ slug }: { slug: string }) {
       <div className="title-wrap">
         {edit ? (
           <input
+            ref={titleRef}
             className="title-input"
             value={edit.title}
             placeholder={t('untitled')}
@@ -594,6 +641,19 @@ export function Editor({ slug }: { slug: string }) {
         ) : (
           <span className="title-input">{t('loading')}</span>
         )}
+        {edit && (
+          <button
+            className="title-pencil"
+            title={t('rename')}
+            aria-label={t('rename')}
+            onClick={() => {
+              titleRef.current?.focus();
+              titleRef.current?.select();
+            }}
+          >
+            ✎
+          </button>
+        )}
       </div>
       <div className="top-actions">
         <span className={`save-state ${saveState}`}>{saveLabel}</span>
@@ -604,19 +664,33 @@ export function Editor({ slug }: { slug: string }) {
           ↷
         </button>
         {edit && <VersionsMenu slug={slug} restore={runRestore} />}
-        {edit && (
-          <button
-            className={`btn top-make ${rendering ? 'running' : ''}`}
-            onClick={() => (rendering ? document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth' }) : void startRender())}
-            disabled={renderStarting}
-            style={rendering ? { ['--pct' as string]: `${pct}%` } : undefined}
-          >
-            {rendering ? (pct === 0 ? t('makingShort') : `${t('makingShort')} ${pct}%`) : t('makeVideo')}
-          </button>
+        {edit && doneFlash && !rendering ? (
+          <a className="btn top-make top-download" href={doneFlash.url} download onClick={() => setTimeout(() => setDoneFlash(null), 1500)}>
+            ↓ {t('downloadVideo')}
+          </a>
+        ) : (
+          edit && (
+            <button
+              className={`btn top-make ${rendering ? 'running' : ''}`}
+              onClick={() => (rendering ? document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth' }) : void startRender())}
+              disabled={renderStarting}
+              style={rendering ? { ['--pct' as string]: `${pct}%` } : undefined}
+            >
+              {rendering ? (pct === 0 ? t('makingShort') : `${t('makingShort')} ${pct}%`) : t('topMakeIg')}
+            </button>
+          )
         )}
         {edit && !rendering && (
           <button className="btn top-tiktok" onClick={() => void tkJob.start()} disabled={tkJob.starting} title={t('makeTiktok')}>
-            {t('tiktokTag')}
+            {t('topTiktok')}
+          </button>
+        )}
+        {edit && (
+          <button
+            className="btn top-look"
+            onClick={() => void openLook()}
+          >
+            {t('lookBtn')}
           </button>
         )}
         {edit && (
@@ -644,7 +718,7 @@ export function Editor({ slug }: { slug: string }) {
                 <p className="error-text">{errText(t, status.code, status.message)}</p>
               ) : (
                 <>
-                  <StepList status={status} />
+                  <StepList status={status} notes />
                   <p className="muted">{t('processingNote')}</p>
                 </>
               )}
@@ -657,25 +731,50 @@ export function Editor({ slug }: { slug: string }) {
     );
   }
 
-  const sections: [string, string][] = [
-    ['style', t('style')],
-    ['endcard', t('endCard')],
-    ['hook', t('hook')],
-    ['fonts', t('fonts')],
-    ['words', t('words')],
-    ['effects', t('effectsInReel')],
-    ['board', t('board')],
-    ['sfx', t('soundEffects')],
-    ['music', t('music')],
-    ['vibe', t('vibe')],
-    ['pauses', t('pauses')],
-    ['cover', t('cover')],
-    ['post', t('post')],
-    ['render', t('render')],
+  // The panels in 5 groups, in the order she needs them. Every panel stays reachable.
+  const groups: { id: string; label: string; items: [string, string][] }[] = [
+    { id: 'look', label: t('grp_look'), items: [['style', t('style')], ['fonts', t('fonts')], ['vibe', t('vibe')]] },
+    { id: 'words', label: t('grp_words'), items: [['words', t('words')], ['effects', t('effectsInReel')], ['hook', t('hook')], ['pauses', t('pauses')]] },
+    { id: 'sound', label: t('grp_sound'), items: [['sfx', t('soundEffects')], ['music', t('music')]] },
+    { id: 'extras', label: t('grp_extras'), items: [['board', t('board')], ['endcard', t('endCard')], ['cover', t('cover')]] },
+    { id: 'finish', label: t('grp_finish'), items: [['post', t('post')], ['render', t('render')]] },
   ];
+  const groupHead = (id: string) => {
+    const g = groups.find((x) => x.id === id)!;
+    return (
+      <div className="panel-group-head" id={`group-${id}`}>
+        <span className="pg-label">{g.label}</span>
+        {id === 'look' && (
+          <span className="pg-link">
+            {t('lookGroupLink')}{' '}
+            <button className="link-btn" onClick={openLook}>
+              {t('lookBtn')} →
+            </button>
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const sum = detail.summary;
-  const showSummary = !!sum && !summaryHidden && (sum.pausesCut != null || sum.effects != null);
+  const showSummary = !!sum && !summaryHidden && lookDone !== null && (sum.pausesCut != null || sum.effects != null);
+  const hideSummary = () => {
+    setSummaryHidden(true);
+    writeLS(`reel-studio-summary-${slug}`, '1');
+  };
+  const sumText = sum
+    ? fmt(t('summaryText'), {
+        pauses: plural(sum.pausesCut ?? 0, lang, t, 'pause'),
+        saved: num(Math.round((sum.secondsSaved ?? 0) * 10) / 10, lang, 1),
+        hook: sum.hook ? t('summaryHook') : '',
+        effects: sum.effects ? fmt(t(sum.hook ? 'summaryEffects' : 'summaryEffectsOnly'), { n: plural(sum.effects, lang, t, 'effect') }) : '',
+      })
+    : '';
+  const watch = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    player.current?.seekTo(0);
+    player.current?.play();
+  };
 
   return (
     <div className="editor">
@@ -687,41 +786,57 @@ export function Editor({ slug }: { slug: string }) {
         </aside>
         <main className="panels-col">
           <nav className="section-nav">
-            {sections.map(([id, label]) => (
-              <a
-                key={id}
-                href={`#panel-${id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.getElementById(`panel-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-              >
-                {label}
-              </a>
+            {groups.map((g) => (
+              <span className="nav-group" key={g.id}>
+                <span className="nav-group-label">{g.label}</span>
+                {g.items.map(([id, label]) => (
+                  <a
+                    key={id}
+                    href={`#panel-${id}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      document.getElementById(`panel-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                  >
+                    {label}
+                  </a>
+                ))}
+              </span>
             ))}
           </nav>
           {showSummary && sum && (
-            <div className="summary-card">
+            <div className={`summary-card ${lookDone ? '' : 'first'}`}>
               <span className="ask-spark" aria-hidden>
                 ✦
               </span>
-              <p>
-                {fmt(t('summaryText'), {
-                  pauses: sum.pausesCut ?? 0,
-                  saved: Math.round((sum.secondsSaved ?? 0) * 10) / 10,
-                  hook: sum.hook ? t('summaryHook') : '',
-                  effects: sum.effects ? fmt(t('summaryEffects'), { n: sum.effects }) : '',
-                })}
-              </p>
-              <button
-                className="btn"
-                onClick={() => {
-                  setSummaryHidden(true);
-                  writeLS(`reel-studio-summary-${slug}`, '1');
-                }}
-              >
-                {t('dismiss')}
-              </button>
+              <div className="summary-body">
+                <p>{sumText}</p>
+                <p className="summary-next">{lookDone ? t('summaryNextMake') : t('summaryNextLook')}</p>
+                <div className="summary-actions">
+                  {lookDone ? (
+                    <>
+                      <button className="btn summary-primary" onClick={watch}>
+                        ▶ {t('summaryWatch')}
+                      </button>
+                      <button className="btn" onClick={() => void startRender()} disabled={rendering || renderStarting}>
+                        {rendering ? t('makingShort') : t('makeVideo')}
+                      </button>
+                      <button className="link-btn summary-dismiss" onClick={hideSummary}>
+                        {t('dismiss')}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn summary-primary" onClick={() => void openLook()}>
+                        {t('summaryPickLook')}
+                      </button>
+                      <button className="btn" onClick={hideSummary}>
+                        {t('summaryLater')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           )}
           {splitCount > 0 && (
@@ -735,10 +850,11 @@ export function Editor({ slug }: { slug: string }) {
               </button>
             </div>
           )}
+          {groupHead('look')}
           <StylePanel slug={slug} edit={edit} styles={styles.styles} defaultStyle={styles.defaultStyle} reloadStyles={reloadStyles} applyStyle={runApplyStyle} />
-          <EndCardPanel edit={edit} change={change} board={board} setBoard={setBoard} keywordsElsewhere={keywordsOther} />
-          <HookPanel edit={edit} change={change} />
           <FontsPanel edit={edit} change={change} />
+          <VibePanel edit={edit} change={change} />
+          {groupHead('words')}
           <WordsPanel
             edit={edit}
             change={change}
@@ -764,11 +880,14 @@ export function Editor({ slug }: { slug: string }) {
             seekSource={seekSource}
             sfx={sfx}
           />
-          <BoardPanel board={board} setBoard={setBoard} usedBy={usedBy} />
+          <HookPanel edit={edit} change={change} />
+          <PausesPanel runAutoedit={runAutoedit} onSplit={detail.parent ? undefined : runSplit} splitting={splitting} />
+          {groupHead('sound')}
           <SfxPanel edit={edit} change={change} sfx={sfx} />
           <MusicPanel edit={edit} change={change} music={music} setMusic={setMusic} />
-          <VibePanel edit={edit} change={change} />
-          <PausesPanel runAutoedit={runAutoedit} onSplit={detail.parent ? undefined : runSplit} splitting={splitting} />
+          {groupHead('extras')}
+          <BoardPanel board={board} setBoard={setBoard} usedBy={usedBy} />
+          <EndCardPanel edit={edit} change={change} board={board} setBoard={setBoard} keywordsElsewhere={keywordsOther} />
           <CoverPanel
             slug={slug}
             edit={edit}
@@ -777,6 +896,7 @@ export function Editor({ slug }: { slug: string }) {
             bump={bump}
             currentSource={() => outputToSource((player.current?.getCurrentFrame() ?? 0) / FPS, edit.segments)}
           />
+          {groupHead('finish')}
           <PostPanel edit={edit} change={change} askDraft={askDraftFn} />
           <RenderPanel
             slug={slug}
@@ -824,9 +944,19 @@ export function Editor({ slug }: { slug: string }) {
         </div>
       )}
       {toast && (
-        <div className="toast" key={toast.id}>
+        <div className={`toast ${toast.href ? 'with-link' : ''}`} key={toast.id} role="status">
           <span className="toast-dot" />
           {toast.msg}
+          {toast.href && (
+            <a className="toast-link" href={toast.href} download>
+              {toast.link}
+            </a>
+          )}
+          {toast.long && (
+            <button className="toast-close" aria-label={t('close')} onClick={() => setToast(null)}>
+              ×
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -857,6 +987,8 @@ function AskWatcher({ slug, onRunning }: { slug: string; onRunning: (r: boolean)
   return null;
 }
 
+type Toast = { msg: string; id: number; href?: string; link?: string; long?: boolean };
+
 export type RenderJob = {
   render: RenderState | null;
   starting: boolean;
@@ -866,7 +998,15 @@ export type RenderJob = {
 };
 
 // One render job (Instagram or TikTok): polls its state and starts it.
-function useRenderJob(slug: string, variant: Variant, flush: () => Promise<void>, onFinished: () => void): RenderJob {
+function useRenderJob(
+  slug: string,
+  variant: Variant,
+  flush: () => Promise<void>,
+  onFinished: () => void,
+  onEvent: (kind: 'done' | 'stopped', s: RenderState) => void,
+): RenderJob {
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
   const { t } = useT();
   const [render, setRender] = useState<RenderState | null>(null);
   const [starting, setStarting] = useState(false);
@@ -883,7 +1023,11 @@ function useRenderJob(slug: string, variant: Variant, flush: () => Promise<void>
         setRender(s);
         if (was.current && !s.running) {
           onFinished();
-          if (!s.error && s.file) setJustDone(s.file);
+          if (s.stopped) onEventRef.current('stopped', s);
+          else if (!s.error && s.file) {
+            setJustDone(s.file);
+            onEventRef.current('done', s);
+          }
         }
         was.current = s.running;
         id = window.setTimeout(tick, s.running ? 1000 : 5000);

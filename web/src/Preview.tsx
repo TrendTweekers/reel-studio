@@ -129,6 +129,7 @@ export function Preview({
       </div>
 
       <p className="keys-hint">{t('spaceHint')}</p>
+      <div className="toggles-head">{t('inThisReel')}</div>
       <div className="toggles">
         <Toggle on={edit.sound.effects} label={t('togSfx')} set={(v) => change((e) => ({ ...e, sound: { ...e.sound, effects: v } }))} />
         <Toggle on={musicOn} label={t('togMusic')} set={toggleMusic} />

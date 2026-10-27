@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type HistoryItem } from './api';
-import { fmt, useT, type StrKey } from './i18n';
+import { fmt, plural, useT, type StrKey } from './i18n';
 import { fmtTime } from './ui';
 
 // Earlier saved versions of edit.json (kept by the server). Restore is undoable like any server change.
@@ -24,8 +24,8 @@ export function VersionsMenu({ slug, restore }: { slug: string; restore: (id: st
 
   return (
     <div className="versions" ref={box}>
-      <button className="icon-btn" title={t('versions')} aria-label={t('versions')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        ◷
+      <button className="btn versions-btn" title={t('versions')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span aria-hidden>◷</span> {t('versions')}
       </button>
       {open && (
         <div className="versions-menu" role="menu">
@@ -42,7 +42,7 @@ export function VersionsMenu({ slug, restore }: { slug: string; restore: (id: st
                     {new Date(h.at).toLocaleString(lang === 'pl' ? 'pl-PL' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </span>
                   <span className="v-meta">
-                    {t(`by_${h.by}` as StrKey) || h.by} · {fmt(t('nEffects'), { n: h.effects })} · {fmtTime(h.seconds)}
+                    {t(`by_${h.by}` as StrKey) || h.by} · {fmt(t('nEffects'), { n: plural(h.effects, lang, t, 'effect') })} · {fmtTime(h.seconds)}
                   </span>
                   <button
                     className="link-btn"

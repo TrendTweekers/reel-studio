@@ -25,3 +25,4 @@ __pycache__/
 instagram/*
 !instagram/voice.md
 !instagram/voice.template.md
+fx-test/

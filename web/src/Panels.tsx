@@ -3,21 +3,21 @@ import type { Edit } from '../../src/shared/types';
 import { HOOK_FONTS, SFX_NAMES, SUBTITLE_FONTS } from '../../src/shared/types';
 import { api, upload, type FileItem, type Problem, type RenderInfo, type SfxItem } from './api';
 import type { Change, RenderJob, UsedBy } from './Editor';
-import { errText, fmt, FONT_CAPTIONS, sfxLabel, useT, type StrKey } from './i18n';
+import { errText, fmt, FONT_CAPTIONS, numFixed, sfxLabel, useT, type StrKey } from './i18n';
 import { Check, Chips, Group, HelpTip, Panel, playPreview } from './ui';
 
 type P = { edit: Edit; change: Change };
 
 // ---------------- Hook ----------------
 export function HookPanel({ edit, change }: P) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const hook = edit.hook;
   const set = (patch: Partial<NonNullable<Edit['hook']>>, key: string) =>
     change((e) => ({ ...e, hook: { text: '', until: 2.5, ...(e.hook ?? {}), ...patch } }), `hook:${key}`);
   return (
     <Panel
       id="hook"
-      title={t('hook')}
+      title={t('hookTitle')}
       hint={t('hookHint')}
       aside={<Check checked={!!hook} label={t('hookOn')} onChange={(v) => change((e) => ({ ...e, hook: v ? { text: '', until: 2.5 } : null }))} />}
     >
@@ -37,7 +37,7 @@ export function HookPanel({ edit, change }: P) {
           </label>
           <label className="field">
             <span>
-              {t('hookUntil')} <b>{hook.until.toFixed(1)} s</b>
+              {t('hookUntil')} <b>{numFixed(hook.until, lang, 1)} s</b>
             </span>
             <input type="range" min={0.5} max={8} step={0.1} value={hook.until} onChange={(e) => set({ until: Number(e.target.value) }, 'until')} />
           </label>
@@ -345,7 +345,7 @@ export function VibePanel({ edit, change }: P) {
 
 // ---------------- Pauses ----------------
 export function PausesPanel({ runAutoedit, onSplit, splitting }: { runAutoedit: (gap: number) => Promise<void>; onSplit?: () => void; splitting?: boolean }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [tight, setTight] = useState(0.5); // 0 = relaxed (0.6 s), 1 = tight (0.25 s)
   const [busy, setBusy] = useState(false);
   const gap = Math.round((0.6 - tight * 0.35) * 100) / 100;
@@ -353,7 +353,7 @@ export function PausesPanel({ runAutoedit, onSplit, splitting }: { runAutoedit: 
     <Panel id="pauses" title={t('pauses')} hint={t('cutAgainNote')}>
       <div className="field">
         <span>
-          {t('howTight')} <b>{gap.toFixed(2)} s</b>
+          {t('howTight')} <b>{numFixed(gap, lang, 2)} s</b>
         </span>
         <div className="range-labels">
           <span>{t('relaxed')}</span>
@@ -414,6 +414,7 @@ function JobBlock({ slug, job, label, primary }: { slug: string; job: RenderJob;
         </div>
       )}
       {(job.startErr || err) && <p className="error-text">{job.startErr ?? err}</p>}
+      {!running && !job.starting && !job.startErr && !err && !job.justDone && r?.stopped && <p className="error-text render-stopped">{t('renderStopped')}</p>}
       {!running && job.justDone && (
         <div className="render-done">
           <p className="serif-line">✓ {t('renderDone')}</p>

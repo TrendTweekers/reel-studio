@@ -13,6 +13,17 @@ import { Glass } from '../effects/Glass';
 import { Label } from '../effects/Label';
 import { Phone } from '../effects/Phone';
 import { Picture } from '../effects/Picture';
+import { ChartGrow } from '../effects/ChartGrow';
+import { CoverStory } from '../effects/CoverStory';
+import { Doodle } from '../effects/Doodle';
+import { FrameBreak } from '../effects/FrameBreak';
+import { GreenScreen } from '../effects/GreenScreen';
+import { Orbit } from '../effects/Orbit';
+import { PaperCut } from '../effects/PaperCut';
+import { PullBack } from '../effects/PullBack';
+import { UiWorld } from '../effects/UiWorld';
+import { Vertigo } from '../effects/Vertigo';
+import { ZoomThrough } from '../effects/ZoomThrough';
 
 const render = (e: TimedEffect) => {
   switch (e.kind) {
@@ -34,6 +45,28 @@ const render = (e: TimedEffect) => {
       return <Phone e={e} />;
     case 'emoji':
       return <Emoji e={e} />;
+    case 'framebreak':
+      return <FrameBreak e={e} />;
+    case 'papercut':
+      return <PaperCut e={e} />;
+    case 'vertigo':
+      return <Vertigo e={e} />;
+    case 'pullback':
+      return <PullBack e={e} />;
+    case 'greenscreen':
+      return <GreenScreen e={e} />;
+    case 'cover':
+      return <CoverStory e={e} />;
+    case 'zoomthrough':
+      return <ZoomThrough e={e} />;
+    case 'orbit':
+      return <Orbit e={e} />;
+    case 'doodle':
+      return <Doodle e={e} />;
+    case 'ui':
+      return <UiWorld e={e} />;
+    case 'chart':
+      return <ChartGrow e={e} />;
     default:
       return null; // 'zoom' is done by <Camera>
   }

@@ -1,7 +1,7 @@
 // The checks for an edit, shared by `npm run check` (for Claude) and GET /api/projects/:slug/problems
 // (for the page, before "Make the video"). Each problem has a plain sentence for her and a technical
 // detail for Claude.
-import { HOOK_FONTS, SFX_NAMES, SUBTITLE_FONTS, type Edit, type Word } from './types';
+import { HOOK_FONTS, NEEDS_CUTOUT, SFX_NAMES, SUBTITLE_FONTS, type Edit, type Word } from './types';
 import { sourceToOutput } from './time';
 
 export type Problem = {
@@ -11,7 +11,23 @@ export type Problem = {
   effectId?: string;
 };
 
-export const KINDS = ['picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'checklist', 'flash', 'phone', 'emoji'];
+export const KINDS = [
+  'picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'checklist', 'flash', 'phone', 'emoji',
+  'framebreak', 'papercut', 'vertigo', 'pullback', 'greenscreen', 'cover', 'zoomthrough', 'orbit', 'doodle', 'ui', 'chart',
+];
+// Plain names for her, used in problem sentences.
+const NICE: Record<string, string> = {
+  behind: 'Text behind me',
+  framebreak: 'Frame break',
+  papercut: 'Paper cut',
+  vertigo: 'Vertigo',
+  greenscreen: 'Green screen',
+};
+// "Label: 42" -> number; null when the line has no number.
+export const chartValue = (item: string) => {
+  const m = item.match(/(-?\d+(?:[.,]\d+)?)\s*%?\s*$/);
+  return m ? Number(m[1].replace(',', '.')) : null;
+};
 export const POSITIONS = ['auto', 'top', 'bottom', 'left', 'right', 'above-head', 'center'];
 
 export const checkEdit = (
@@ -46,14 +62,23 @@ export const checkEdit = (
     if (sourceToOutput(e.at, edit.segments) === null) add({ code: 'bad_effect', text: `An effect${on} is after the end, so it will not show.`, detail: `${name}: at=${e.at} is after the end of the edit`, effectId: e.id });
     else if (!edit.segments.some((s) => e.at >= s.start - 0.05 && e.at <= s.end))
       add({ code: 'bad_effect', text: `An effect${on} sits on a cut word, so it shows a bit later.`, detail: `${name}: at=${e.at} is inside a cut part, so it starts at the next kept part`, effectId: e.id });
+    if (['framebreak', 'papercut', 'orbit'].includes(e.kind) && e.image && !ctx.board.has(e.image)) // optional picture
+      add({ code: 'picture_missing', text: `The picture "${e.image}"${on} is missing. Pick another one.`, detail: `${name}: picture "${e.image}" is not in board/`, effectId: e.id });
+    // greenscreen without a picture = a cream studio backdrop (fine); a missing picture is a problem.
+    if (e.kind === 'greenscreen' && e.image && !ctx.board.has(e.image))
+      add({ code: 'picture_missing', text: `The background picture "${e.image}"${on} is missing. Pick another one.`, detail: `${name}: image "${e.image}" is not in board/`, effectId: e.id });
+    if (e.kind === 'chart' && (e.items ?? []).filter((x) => chartValue(x) !== null).length < 2)
+      add({ code: 'items_missing', text: `The chart${on} needs at least 2 bars with a number, like "Wrzesień: 4".`, detail: `${name}: items must be "Label: number", at least 2`, effectId: e.id });
+    if (e.kind === 'orbit' && !(e.items ?? []).some((x) => x.trim()) && !e.image)
+      add({ code: 'items_missing', text: `The orbit${on} needs words or a picture to circle around you.`, detail: `${name}: needs items or image`, effectId: e.id });
     if ((e.kind === 'picture' || e.kind === 'phone') && (!e.image || !ctx.board.has(e.image)))
       add({ code: 'picture_missing', text: e.image ? `The picture "${e.image}"${on} is missing. Pick another one.` : `The picture effect${on} has no picture yet.`, detail: `${name}: picture "${e.image}" is not in board/`, effectId: e.id });
     if (['label', 'glass', 'behind', 'chapter', 'emoji'].includes(e.kind) && !e.text) add({ code: 'text_missing', text: `An effect${on} has no text.`, detail: `${name}: needs text`, effectId: e.id });
     if (e.kind === 'checklist' && !e.items?.length) add({ code: 'items_missing', text: `The list${on} is empty.`, detail: `${name}: needs items`, effectId: e.id });
     if (e.position && !POSITIONS.includes(e.position)) add({ code: 'bad_effect', text: `An effect${on} has an unknown place.`, detail: `${name}: position must be one of: ${POSITIONS.join(', ')}`, effectId: e.id });
     if (e.sfx && e.sfx !== 'none' && e.sfx !== 'default' && !SFX_NAMES.includes(e.sfx)) add({ code: 'bad_effect', text: `An effect${on} has an unknown sound.`, detail: `${name}: unknown sound "${e.sfx}"`, effectId: e.id });
-    if (e.kind === 'behind' && !ctx.hasCutout)
-      add({ code: 'cutout_missing', text: `"Text behind me"${on} needs the cut-out first. It is made once, in a few minutes.`, detail: `${name}: needs the person cut-out (POST /api/projects/<slug>/cutout)`, effectId: e.id });
+    if (NEEDS_CUTOUT.includes(e.kind) && !ctx.hasCutout)
+      add({ code: 'cutout_missing', text: `"${NICE[e.kind] ?? e.kind}"${on} needs the cut-out first. It is made once, in a few minutes.`, detail: `${name}: needs the person cut-out (POST /api/projects/<slug>/cutout)`, effectId: e.id });
   }
   if (edit.cover) {
     if (!['top', 'center', 'bottom', 'none'].includes(edit.cover.layout)) add({ code: 'bad_cover', text: 'The cover title place is unknown.', detail: 'cover.layout must be top, center, bottom or none' });

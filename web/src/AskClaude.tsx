@@ -3,6 +3,17 @@ import type { Segment, Word } from '../../src/shared/types';
 import { api, HttpError, type AskState, type FileItem } from './api';
 import { isWordKept } from './editState';
 import { IG_PROMPTS } from '../../src/shared/igPrompts';
+import type { StrKey } from './i18n';
+
+// What she adds after each Instagram helper text.
+const TOPIC_PH: Record<string, StrKey> = {
+  week: 'ph_topics',
+  trends: 'ph_accounts',
+  caption: 'ph_caption',
+  replies: 'ph_comments',
+  profile: 'ph_bio',
+  audit: 'ph_numbers',
+};
 import { errText, fmt, useT, type Lang } from './i18n';
 
 // Activity text from the server is English. Known ones get a Polish version.
@@ -66,13 +77,16 @@ export function AskClaude({
       }
       return !o;
     });
-  const fill = (value: string, withSkill?: string) => {
-    // Fill only; she sends with Enter. A click never starts a run.
-    setText(value);
+  const fill = (value: string, withSkill?: string, placeholder?: string) => {
+    // Fill only; she sends with Enter. A click never starts a run. A helper that needs her topic ends
+    // with a selected "[your topic]", so what she types replaces it.
+    const full = placeholder ? `${value.replace(/\s+$/, '')} ${placeholder}` : value;
+    setText(full);
     setSkill(withSkill);
     setTimeout(() => {
       input.current?.focus();
-      input.current?.setSelectionRange(value.length, value.length);
+      if (placeholder) input.current?.setSelectionRange(full.length - placeholder.length, full.length);
+      else input.current?.setSelectionRange(full.length, full.length);
     }, 0);
   };
   const list = useRef<HTMLDivElement>(null);
@@ -231,7 +245,7 @@ export function AskClaude({
             <p className="ig-hint muted">{t('igHint')}</p>
             <div className="ig-chips">
               {IG_PROMPTS.map((p) => (
-                <button key={p.id} type="button" className="chip" disabled={st.running} onClick={() => fill(p.text[lang], p.skill)}>
+                <button key={p.id} type="button" className="chip" disabled={st.running} onClick={() => fill(p.text[lang], p.skill, p.topic ? t(TOPIC_PH[p.id] ?? 'ph_topic') : undefined)}>
                   {p.label[lang]}
                 </button>
               ))}

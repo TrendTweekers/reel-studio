@@ -9,6 +9,12 @@ pojawiają się słowo po słowie, a wygląd zmieniasz jednym kliknięciem albo 
 zwykłymi słowami. Wszystko działa na Twoim Macu, z Twoją subskrypcją Claude. Filmy nie
 opuszczają Twojego komputera.*
 
+After your first video, **My look** shows your own reel in different fonts, colours, subtitles and
+effects: tap what feels like you, and it becomes your style. 21 effects, including frame break,
+paper cut, magazine cover, chart grow, orbit and green screen. *Po pierwszym filmie „Mój styl”
+pokazuje Twoją rolkę w różnych czcionkach, kolorach, napisach i efektach: klikasz, co Ci pasuje,
+i to staje się Twoim stylem.*
+
 Before you film and after you post, Claude also helps with Instagram: hooks and scripts, a
 week plan, caption checks, replies and DMs. *Przed nagraniem i po publikacji Claude pomaga też
 z Instagramem: hooki i scenariusze, plan tygodnia, opisy, odpowiedzi i wiadomości.*

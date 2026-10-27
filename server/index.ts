@@ -18,6 +18,8 @@ import { makeHistory } from './history';
 import { normalizeLoudness } from './loudness';
 import { AUDIO, IMAGE, intake } from './intake';
 import { splitParts } from './split';
+import { mountLooks } from './looks';
+import { autoTitle, isGenericTitle, titleFromWords } from './title';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROJECTS = path.join(ROOT, 'projects');
@@ -197,22 +199,6 @@ const jsonArrayOk = (p: string) => {
   }
 };
 
-// File names from a phone or a screen recorder say nothing ("IMG_1234"): use her first words instead.
-const GENERIC_TITLE = /^((IMG|VID|MOV|PXL|DSC|DJI|RPReplay|ScreenRecording)[_ -]?\d|trim\b|reel$|video$|untitled)/i;
-const titleFromWords = (words: Word[]) => {
-  const spoken = words.filter((w) => !isFiller(w));
-  // Skip a greeting at the start ("Cześć, dziś pokażę..." -> "Dziś pokażę...").
-  while (spoken.length > 3 && /^(cześć|czesc|hej|hejka|siema|hello|hi|hey|witajcie|witam|kochani|dziewczyny)$/i.test(spoken[0].text.replace(/[^\p{L}]/gu, ''))) spoken.shift();
-  const out: string[] = [];
-  for (const w of spoken) {
-    out.push(w.text);
-    if (out.length >= 5 && /[.!?…]$/.test(w.text)) break;
-    if (out.length >= 7) break;
-  }
-  const t = out.join(' ').replace(/[.,!?…;:]+$/, '').trim();
-  return out.length >= 2 ? t.charAt(0).toUpperCase() + t.slice(1) : null;
-};
-
 const runAnalyse = async (slug: string, force: boolean) => {
   try {
     const src = sourceOf(slug);
@@ -228,10 +214,11 @@ const runAnalyse = async (slug: string, force: boolean) => {
     if (!normalized) await runTool(slug, 'normalize', 'normalize');
     if (force || !jsonArrayOk(file(slug, 'words.json'))) {
       await runTool(slug, 'transcribe', 'transcribe', process.env.REEL_LANGUAGE ? ['--language', process.env.REEL_LANGUAGE] : []);
+      // A file name ("IMG_4821", "VID_...", "source") never becomes the title: some styles print it.
       const m = meta(slug);
-      if (m.title && GENERIC_TITLE.test(m.title)) {
-        const t = titleFromWords(readJson<Word[]>(file(slug, 'words.json'), []));
-        if (t) setMeta(slug, { title: t, autoTitle: true });
+      if (isGenericTitle(m.title)) {
+        const t = autoTitle(m.title, readJson<Word[]>(file(slug, 'words.json'), []));
+        setMeta(slug, { title: t.title, autoTitle: true });
       }
     }
     if (force || !jsonArrayOk(file(slug, 'faces.json'))) await runTool(slug, 'faces', 'faces');
@@ -239,7 +226,7 @@ const runAnalyse = async (slug: string, force: boolean) => {
     if (!fs.existsSync(file(slug, 'edit.json'))) {
       const transcript = readJson<{ language?: string }>(file(slug, 'transcript.json'), {});
       const edit = firstEdit({
-        title: meta(slug).title ?? slug,
+        title: isGenericTitle(meta(slug).title) ? '' : (meta(slug).title ?? ''),
         language: transcript.language ?? 'pl',
         duration: await probeDuration(file(slug, 'proxy.mp4')),
         words: readJson(file(slug, 'words.json'), []),
@@ -299,9 +286,41 @@ const makeCutout = (slug: string) => toolJob(slug, 'cutout', 'cutout', 'Cut-out 
 const findCovers = (slug: string) => toolJob(slug, 'covers', 'cover_frames', 'Cover frames failed');
 
 // ---- Render ----
-type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number };
+type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean };
 const renders = new Map<string, RenderJob>();
 const cancels = new Set<() => void>();
+
+// The render state is also kept on disk (out/render-<variant>.json), written as it changes. After a
+// restart (app quit, Mac asleep, update) a file that still says "running" means the video stopped
+// before it was done, so the page can say so instead of nothing.
+const renderStateFile = (slug: string, variant: RenderVariant) => file(slug, `out/render-${variant}.json`);
+const saveRenderState = (slug: string, variant: RenderVariant, job: RenderJob) => {
+  try {
+    if (!fs.existsSync(dir(slug))) return;
+    fs.mkdirSync(file(slug, 'out'), { recursive: true });
+    writeJson(renderStateFile(slug, variant), {
+      running: job.running,
+      progress: job.progress,
+      stage: job.stage,
+      file: job.file,
+      url: job.file ? `/media/${slug}/out/${encodeURIComponent(job.file)}` : undefined,
+      error: job.error,
+      code: job.code,
+      stopped: job.stopped || undefined,
+      at: new Date().toISOString(),
+    });
+  } catch {
+    /* a full disk must not stop the render */
+  }
+};
+// The last known state when this server has no job in memory (it was restarted).
+const savedRenderState = (slug: string, variant: RenderVariant): RenderJob | null => {
+  const j = readJson<RenderJob | null>(renderStateFile(slug, variant), null);
+  if (!j || typeof j !== 'object') return null;
+  if (j.running) return { running: false, progress: j.progress ?? 0, stopped: true };
+  if (j.file && !fs.existsSync(file(slug, `out/${j.file}`))) return null;
+  return { running: false, progress: j.progress ?? 0, file: j.file, error: j.error, code: j.code, stage: j.stage, stopped: j.stopped };
+};
 
 // The bundle is rebuilt when any file under src/remotion or src/shared changes (a new effect).
 const newestUnder = (d: string): number => {
@@ -384,6 +403,9 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
   job.queued = false;
   delete job.position;
   job.stage = 'Preparing';
+  const save = () => saveRenderState(slug, variant, job);
+  let savedPct = -1;
+  save();
   const outDir = file(slug, 'out');
   const tmp = path.join(outDir, `.rendering-${Date.now()}.mp4`);
   try {
@@ -393,6 +415,7 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
     const composition = await selectComposition({ serveUrl, id: 'Reel', inputProps });
     fs.mkdirSync(outDir, { recursive: true });
     job.stage = 'Making the video';
+    save();
     const once = async () => {
       const { cancelSignal, cancel } = makeCancelSignal();
       cancels.add(cancel);
@@ -412,6 +435,11 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
           concurrency: '50%',
           onProgress: ({ progress }) => {
             job.progress = Math.min(0.98, progress);
+            const pct = Math.floor(job.progress * 100);
+            if (pct !== savedPct) {
+              savedPct = pct;
+              save();
+            }
           },
         });
       } finally {
@@ -430,6 +458,7 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
     // Instagram level loudness. On failure the video is kept as it was rendered.
     job.stage = 'Finishing sound';
     job.progress = 0.99;
+    save();
     const name = renderName(slug, variant);
     const final = path.join(outDir, name);
     const norm = path.join(outDir, `.loudnorm-${Date.now()}.mp4`);
@@ -447,14 +476,22 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
     job.progress = 1;
     job.stage = 'Done';
   } catch (e) {
-    toolLog(slug, `\n== render failed\n${(e as Error).message}\n`);
-    const m = mapError((e as Error).message, 'render_failed');
-    job.code = m.code;
-    job.error = m.message;
-    job.stage = 'Failed';
     fs.rmSync(tmp, { force: true });
+    if (shuttingDown) {
+      // Reel Studio is closing: not her mistake. The next start says "stopped before it was done".
+      toolLog(slug, `\n== render stopped (Reel Studio closed)\n`);
+      job.stopped = true;
+      job.stage = 'Stopped';
+    } else {
+      toolLog(slug, `\n== render failed\n${(e as Error).message}\n`);
+      const m = mapError((e as Error).message, 'render_failed');
+      job.code = m.code;
+      job.error = m.message;
+      job.stage = 'Failed';
+    }
   } finally {
     job.running = false;
+    save();
   }
 };
 
@@ -759,7 +796,7 @@ const makeClip = (parent: string, parentEdit: Edit, start: number, end: number, 
   for (const f of ['words.json', 'faces.json', 'transcript.json']) if (fs.existsSync(file(parent, f))) fs.copyFileSync(file(parent, f), file(slug, f));
   writeJson(file(slug, 'meta.json'), { title, createdAt: new Date().toISOString(), parent, range: { start, end } });
   const words = readJson<Word[]>(file(parent, 'words.json'), []).filter((w) => w.start >= start - 0.05 && w.end <= end + 0.05);
-  const edit = firstEdit({ title, language: parentEdit.language, duration: parentEdit.source.duration, words, board: listFiles(BOARD, IMAGE), look: allStyles().find((x) => x.id === parentEdit.styleId) });
+  const edit = firstEdit({ title: isGenericTitle(title) ? '' : title, language: parentEdit.language, duration: parentEdit.source.duration, words, board: listFiles(BOARD, IMAGE), look: allStyles().find((x) => x.id === parentEdit.styleId) });
   edit.segments = edit.segments.map((s) => ({ start: Math.max(s.start, start), end: Math.min(s.end, end) })).filter((s) => s.end - s.start > 0.12);
   edit.style = { ...parentEdit.style };
   edit.sound = { ...parentEdit.sound };
@@ -775,7 +812,7 @@ app.post('/api/projects/:slug/clip', (req, res) => {
   const parent = req.params.slug;
   const start = Number(req.body?.start);
   const end = Number(req.body?.end);
-  const title = String(req.body?.title ?? '').trim() || `${parent} clip`;
+  const title = String(req.body?.title ?? '').trim() || `${meta(parent).title || 'Reel'} clip`;
   const parentEdit = readJson<Edit | null>(file(parent, 'edit.json'), null);
   if (!parentEdit || !fs.existsSync(file(parent, 'proxy.mp4'))) {
     res.status(409).json({ error: 'The long video is not ready yet' });
@@ -805,7 +842,7 @@ const splitProject = (parent: string): SplitResult => {
     setMeta(parent, { batch: { ...m.batch, reason } });
     return { status: 409, slugs: [], code: 'nothing_to_split', reason };
   }
-  const slugs = parts.map((p, i) => makeClip(parent, parentEdit, p.start, p.end, titleFromWords(p.words) ?? `${m.title ?? parent} ${i + 1}`));
+  const slugs = parts.map((p, i) => makeClip(parent, parentEdit, p.start, p.end, titleFromWords(p.words) ?? `${m.title || 'Reel'} ${i + 1}`));
   setMeta(parent, { batch: { ...m.batch, clips: slugs, reason: undefined } });
   return { status: 200, slugs };
 };
@@ -921,6 +958,7 @@ app.post('/api/projects/:slug/render', (req, res) => {
   }
   const job: RenderJob = { running: true, progress: 0, stage: 'Waiting', queued: true };
   renders.set(key, job);
+  saveRenderState(slug, variant, job);
   heavyQ.push({
     slug,
     kind: 'render',
@@ -936,7 +974,7 @@ app.get('/api/projects/:slug/render', (req, res) => {
   const slug = req.params.slug;
   const variant = variantOf(req.query.variant);
   const list = rendersOf(slug).filter((r) => isTikTokFile(r.file) === (variant === 'tiktok'));
-  const job = renders.get(renderKey(slug, variant)) ?? { running: false, progress: 0 };
+  const job = renders.get(renderKey(slug, variant)) ?? savedRenderState(slug, variant) ?? { running: false, progress: 0 };
   const latest = job.file ?? list[0]?.file;
   const latestTime = latest ? mtime(file(slug, `out/${latest}`)) : 0;
   res.json({
@@ -1062,6 +1100,7 @@ const ALLOWED_TOOLS = [
   'Bash(npm run words *)',
   'Bash(npm run transcript *)',
   'Bash(npm run check *)',
+  'Bash(npm run look *)',
   ...HOSTS.map((h) => `Bash(curl -s ${h}/*)`),
   ...HOSTS.map((h) => `Bash(curl -s -X POST ${h}/*)`),
   ...HOSTS.map((h) => `Bash(curl -s -X PUT ${h}/*)`),
@@ -1269,6 +1308,8 @@ app.delete('/api/board/:file', (req, res) => {
 app.get('/api/music', (_req, res) => res.json(listFiles(MUSIC, AUDIO).map((f) => ({ file: f, url: `/music/${encodeURIComponent(f)}` }))));
 app.post('/api/music', toTemp.array('files', 50), intakeHandler(MUSIC, 'audio'));
 app.get('/api/sfx', (_req, res) => res.json(SFX_NAMES.map((name) => ({ name, url: `/sfx/${name}.wav` }))));
+
+mountLooks(app, { root: ROOT, projects: PROJECTS, stylesDir: STYLES, settingsFile: SETTINGS, getBundle, reelProps, allStyles });
 
 const media = { acceptRanges: true, fallthrough: false, dotfiles: 'deny' as const };
 app.use('/media', express.static(PROJECTS, media));

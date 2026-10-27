@@ -28,6 +28,21 @@ export const VideoTrack: React.FC = () => {
   );
 };
 
+// The same jump-cut edit from any file with the proxy's timing (proxy.mp4 or the transparent cutout.webm).
+// Scene effects draw this inside their own window; see effects/footage.tsx.
+export const SegmentsTrack: React.FC<{ src: string; transparent?: boolean }> = ({ src, transparent }) => {
+  const { model } = useReel();
+  return (
+    <>
+      {model.segs.map((s, i) => (
+        <Sequence key={`seg-${i}`} name={`Cut ${i + 1}`} from={s.from} durationInFrames={s.durationInFrames} premountFor={20}>
+          <OffthreadVideo src={src} trimBefore={s.startFrom} transparent={transparent} muted style={fill} />
+        </Sequence>
+      ))}
+    </>
+  );
+};
+
 export const VoiceTrack: React.FC = () => {
   const { model, props } = useReel();
   const last = model.segs.length - 1;

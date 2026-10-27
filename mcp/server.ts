@@ -20,6 +20,7 @@ import { outputDuration, outputToSource, outputWords, sourceToOutput, totalFrame
 import {
   FPS,
   HOOK_FONTS,
+  NEEDS_CUTOUT,
   SFX_NAMES,
   SUBTITLE_FONTS,
   type CoverCandidate,
@@ -205,8 +206,14 @@ const cutRange = (segs: Segment[], a: number, b: number): Segment[] =>
 const keepRange = (segs: Segment[], a: number, b: number): Segment[] => normalizeSegments([...segs.map((s) => ({ ...s })), { start: a, end: b }]);
 
 // ---------- effects (same defaults as the editor page) ----------
-const KINDS = ['picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'checklist', 'flash', 'phone', 'emoji'] as const;
-const DEFAULT_DURATION: Record<EffectKind, number> = { picture: 1.6, label: 1.4, zoom: 0.8, glass: 1.6, behind: 2.0, chapter: 2.0, emoji: 1.0, checklist: 3.5, flash: 0.2, phone: 2.0 };
+const KINDS = [
+  'picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'checklist', 'flash', 'phone', 'emoji',
+  'chart', 'cover', 'framebreak', 'papercut', 'greenscreen', 'orbit', 'doodle', 'ui', 'vertigo', 'pullback', 'zoomthrough',
+] as const;
+const DEFAULT_DURATION: Record<EffectKind, number> = {
+  picture: 1.6, label: 1.4, zoom: 0.8, glass: 1.6, behind: 2.0, chapter: 2.0, emoji: 1.0, checklist: 3.5, flash: 0.2, phone: 2.0,
+  framebreak: 2.5, papercut: 2.0, vertigo: 2.2, pullback: 2.2, greenscreen: 3.0, cover: 2.8, zoomthrough: 0.6, orbit: 3.0, doodle: 2.0, ui: 3.0, chart: 3.2,
+};
 const shortId = () => Math.random().toString(36).slice(2, 8);
 const cleanWord = (s: string) => s.replace(/[.,!?;:„”"“…]+/g, '').trim();
 
@@ -615,9 +622,9 @@ tool(
 // ----- effects -----
 const fieldsShape = z
   .object({
-    text: z.string().describe('label, glass, behind, chapter, emoji'),
-    items: z.array(z.string()).describe('checklist items'),
-    image: z.string().describe('board picture file (list_board), for picture and phone'),
+    text: z.string().describe('label, glass, behind, chapter, emoji; cover title; chart title; ui main text (notification/search); doodle hand-written word'),
+    items: z.array(z.string()).describe('checklist items; cover lines (2-4); orbit words (1-6); ui extra card texts; chart bars "Label: number" (2-6)'),
+    image: z.string().describe('board picture file (list_board): picture, phone (required); greenscreen background, framebreak backdrop, papercut paper, orbit picture (optional)'),
     position: z.enum(['auto', 'top', 'bottom', 'left', 'right', 'above-head', 'center']),
     sfx: z.union([z.enum(SFX_NAMES), z.literal('none'), z.literal('default')]),
     scale: z.number().min(1).max(2).describe('zoom: 1.12 soft, 1.25 normal'),
@@ -649,7 +656,9 @@ const checkImage = async (fields: { image?: string }) => {
 };
 tool(
   'add_effect',
-  `Add one effect on a word. kinds: picture (her board picture pops in; needs image), label (small tag with text), zoom (punch-in on her face; scale), glass (big frosted text), behind (big text behind her; needs the cut-out, started automatically), chapter (title like "[o stylu]"), checklist (items tick one by one), flash (quick white flash), phone (phone mock-up with a board picture), emoji (one big emoji in text). Place it with wordIndex from get_words (best) or sourceSeconds.`,
+  `Add one effect on a word. kinds: picture (her board picture pops in; needs image), label (small tag with text), zoom (punch-in on her face; scale), glass (big frosted text), behind (big text behind her; needs the cut-out, started automatically), chapter (title like "[o stylu]"), checklist (items tick one by one), flash (quick white flash), phone (phone mock-up with a board picture), emoji (one big emoji in text).
+BIG MOMENTS (use 1-2 per reel, on the key line): chart (a chart card that grows; text = title, items = "Label: number" bars), cover (she is on a magazine cover; text = big title like "STYL", items = 2-3 cover lines), framebreak (video becomes a framed photo and she steps out of it; cut-out), papercut (she becomes a paper cut-out sticker; cut-out), greenscreen (she stands in front of a board picture, or a cream studio backdrop without image; cut-out), orbit (words in items, or a picture, circle around her head), doodle (hand-drawn doodles wiggle around her; text optional), ui (phone-style cards float around her: notification/search with text, items = more cards), vertigo (the room stretches away, she stays; cut-out), pullback (starts close, pulls back to reveal), zoomthrough (0.6 s fast zoom into the next shot; put it on the first word after a cut). Cut-out effects start the cut-out automatically.
+Place it with wordIndex from get_words (best) or sourceSeconds.`,
   {
     slug: slugArg,
     kind: z.enum(KINDS),
@@ -659,7 +668,7 @@ tool(
   },
   WRITE,
   async ({ slug, kind, wordIndex, sourceSeconds, fields = {} }) => {
-    if ((kind === 'picture' || kind === 'phone') && !fields.image) throw new UserError('A picture effect needs a board picture (image). Call list_board.');
+    if ((kind === 'picture' || kind === 'phone') && !fields.image) throw new UserError('This effect needs a board picture (image). Call list_board.');
     await checkImage(fields);
     let added: Effect | null = null;
     let startCutout = false;
@@ -671,20 +680,23 @@ tool(
       if (kind === 'chapter') fx.text = `[${place.word ?? ''}]`;
       if (kind === 'emoji') fx.text = '✨';
       if (kind === 'checklist') fx.items = [place.word ?? ''];
+      if (kind === 'cover') fx.text = (place.word ?? 'STYL').toUpperCase();
+      if (kind === 'orbit') fx.items = [place.word ?? ''];
+      if (kind === 'ui' || kind === 'chart') fx.text = place.word;
       if (kind === 'zoom') {
         fx.scale = 1.25;
         fx.sfx = 'none';
       }
       Object.assign(fx, fields);
       added = fx;
-      startCutout = kind === 'behind' && !p.hasCutout;
+      startCutout = NEEDS_CUTOUT.includes(kind) && !p.hasCutout;
       e.effects = [...e.effects, fx].sort((a, b) => a.at - b.at);
     });
     const fx = added as unknown as Effect;
     let note = '';
     if (startCutout) {
       await api('POST', `/api/projects/${enc(slug)}/cutout`, {}).catch(() => {});
-      note = '\nThe person cut-out for "text behind me" is being made now (a few minutes). Until then the text shows in front.';
+      note = '\nThe person cut-out this effect needs is being made now (a few minutes). Until then the effect shows a simpler version.';
     }
     return afterChange(slug, `Added:\n${effectLine(fx, edit.segments)}${neighbours(edit, fx)}${note}`);
   },

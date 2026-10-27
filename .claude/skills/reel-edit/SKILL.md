@@ -30,6 +30,22 @@ The whole edit of a reel is `projects/<slug>/edit.json`. The editor page shows y
 - Zoom on a word: `{"kind":"zoom","scale":1.25,"duration":0.8}`. "Less zoom": lower scale (1.12)
   or set `toggles.zoomJumps` to false.
 - Checklist: `{"kind":"checklist","items":["...","..."],"duration":3.5}`.
+- Big moments (the @viiolini set). Use 1-2 per reel, on the line that matters most:
+  - Chart that grows: `{"kind":"chart","text":"Ile razy założysz botki","items":["Wrzesień: 4","Październik: 12"],"duration":3.2}`
+    (items = bars "Label: number", 2-6; the biggest bar gets her accent colour).
+  - Magazine cover: `{"kind":"cover","text":"STYL","items":["Botki na jesień","3 błędy"],"duration":2.8}`
+    (title behind her head with the cut-out; 2-3 short cover lines).
+  - Frame break `framebreak`, paper cut `papercut`, vertigo `vertigo`: no fields (optional `image` =
+    board picture as backdrop for framebreak/papercut). They need the cut-out (start it as for "behind").
+  - Green screen: `{"kind":"greenscreen","image":"<board file>","duration":3}` (needs the cut-out; without
+    `image` she stands in a cream studio).
+  - Orbit: `{"kind":"orbit","items":["botki","płaszcz"],"duration":3}` (words circle her head; optional `image`).
+  - Doodles: `{"kind":"doodle","text":"to!","duration":2}` (text optional).
+  - App cards: `{"kind":"ui","text":"botki na jesień","items":["Nowa wiadomość: gdzie kupiłaś?"],"duration":3}`.
+  - Pull-back reveal `pullback` (2.2 s) and zoom-through cut `zoomthrough` (0.6 s, on the first word
+    after a cut): no fields.
+  Then look at your work with `npm run look -- <slug> '<effect json>' --keep`
+  (renders 3 stills of the reel with that effect added into `fx-test/`; Read the jpg files).
 - Cut a part: remove that time range from `segments` (split a segment in two around it). Keep a
   little air: cut from 0.05 s after the last kept word ends to 0.08 s before the next kept word starts.
   Put a part back: add the range back and merge touching segments. Segments stay sorted.

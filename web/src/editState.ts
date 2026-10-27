@@ -121,6 +121,17 @@ export const DEFAULT_DURATION: Record<EffectKind, number> = {
   checklist: 3.5,
   flash: 0.2,
   phone: 2.0,
+  framebreak: 2.5,
+  papercut: 2.0,
+  vertigo: 2.2,
+  pullback: 2.2,
+  greenscreen: 3.0,
+  cover: 2.8,
+  zoomthrough: 0.6,
+  orbit: 3.0,
+  doodle: 2.0,
+  ui: 3.0,
+  chart: 3.2,
 };
 
 export const KIND_ICON: Record<EffectKind, string> = {
@@ -134,6 +145,17 @@ export const KIND_ICON: Record<EffectKind, string> = {
   flash: '✦',
   phone: '▯',
   emoji: '☺',
+  framebreak: '⧉',
+  papercut: '✂',
+  vertigo: '◎',
+  pullback: '⤢',
+  greenscreen: '▧',
+  cover: '❖',
+  zoomthrough: '➚',
+  orbit: '⟳',
+  doodle: '✎',
+  ui: '▤',
+  chart: '▥',
 };
 
 export const shortId = () => Math.random().toString(36).slice(2, 8);
@@ -165,6 +187,26 @@ export const newEffect = (kind: EffectKind, w: Word, displayText: string, image?
       break;
     case 'zoom':
       e.scale = 1.25;
+      break;
+    case 'greenscreen':
+    case 'framebreak':
+      if (image) e.image = image;
+      break;
+    case 'cover':
+      e.text = word.toUpperCase();
+      e.items = [];
+      break;
+    case 'orbit':
+      e.items = [word];
+      if (image) e.image = image;
+      break;
+    case 'ui':
+      e.text = word;
+      e.items = [];
+      break;
+    case 'chart':
+      e.text = word;
+      e.items = ['2024: 20', '2025: 45', '2026: 90'];
       break;
     default:
       break;

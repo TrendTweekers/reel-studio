@@ -70,7 +70,27 @@ export type EffectKind =
   | 'checklist' // a card with items that tick one by one
   | 'flash' // a quick white flash, for a cut or a reveal
   | 'phone' // a phone mock-up holding a board picture
-  | 'emoji'; // one big emoji that pops
+  | 'emoji' // one big emoji that pops
+  // Scenes: the whole picture changes for a moment (they draw their own footage).
+  | 'framebreak' // the video shrinks into a framed photo and she steps out of the frame (cutout)
+  | 'papercut' // she becomes a paper cut-out sticker with a white edge on a paper background (cutout)
+  | 'vertigo' // dolly zoom: the room stretches away, she stays the same size (cutout)
+  | 'pullback' // starts close, pulls back to reveal the whole frame inside a soft border
+  | 'greenscreen' // she stands in front of a board picture instead of her room (cutout + image)
+  | 'cover' // a magazine cover: big title behind her head, cover lines (title = text, lines = items)
+  | 'zoomthrough' // a fast zoom through her into the next shot (transition, ~0.6 s)
+  // Overlays: drawn over the video.
+  | 'orbit' // words (items) or a picture circle around her head, behind her on the far side
+  | 'doodle' // hand-drawn doodles that "boil" (wiggle) around her: hearts, stars, arrows, underline
+  | 'ui' // floating app cards around her: notification, search bar, chat bubble, like counter (items)
+  | 'chart'; // a chart card that grows: items "Label: number", title = text
+
+// Effects that need the person cut-out (cutout.webm). Without it they fall back to a plainer look.
+export const NEEDS_CUTOUT: EffectKind[] = ['behind', 'framebreak', 'papercut', 'vertigo', 'greenscreen'];
+// Effects that look better with the cut-out but work without it.
+export const LIKES_CUTOUT: EffectKind[] = ['cover', 'orbit'];
+// Full-frame scenes (drawn above the footage, below hook, cards and subtitles).
+export const SCENE_KINDS: EffectKind[] = ['framebreak', 'papercut', 'vertigo', 'pullback', 'greenscreen', 'cover', 'zoomthrough'];
 
 export type EffectPosition = 'auto' | 'top' | 'bottom' | 'left' | 'right' | 'above-head' | 'center';
 
@@ -80,9 +100,9 @@ export type Effect = {
   at: number; // source seconds, normally the start of the trigger word
   duration: number; // seconds on screen (output time)
   word?: string; // the trigger word, for people and for Claude to read
-  text?: string; // label, glass, behind, chapter, emoji
-  items?: string[]; // checklist
-  image?: string; // file name in board/
+  text?: string; // label, glass, behind, chapter, emoji; cover title; chart title; ui main line
+  items?: string[]; // checklist; cover lines; orbit words; ui card texts; chart bars "Label: 42"
+  image?: string; // file name in board/ (picture, phone, greenscreen background, orbit picture, framebreak backdrop)
   position?: EffectPosition;
   sfx?: SfxName | 'none' | 'default';
   scale?: number; // zoom: 1.0 = none, 1.25 = normal punch
