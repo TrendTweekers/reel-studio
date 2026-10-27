@@ -15,7 +15,11 @@ fi
 MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 [ "$MACOS_MAJOR" -ge 15 ] 2>/dev/null || stop "This Mac has macOS $(sw_vers -productVersion). Reel Studio needs macOS 15 or newer. Update macOS first (System Settings > General > Software Update), then run the installer again."
 FREE_KB="$(df -k / | awk 'NR==2 {print $4}')"
-[ "${FREE_KB:-0}" -ge 15728640 ] || stop "Not enough free disk space. Reel Studio needs 15 GB free. Free up space, then run the installer again."
+# First install needs about 6 GB plus room for her videos. A second run (the big parts are already
+# in ~/ReelStudio) needs only a little.
+if [ -d "$HOME/ReelStudio/.venv" ] && [ -d "$HOME/ReelStudio/models" ]; then NEED_GB=3; else NEED_GB=10; fi
+FREE_GB=$(( ${FREE_KB:-0} / 1048576 ))
+[ "$FREE_GB" -ge "$NEED_GB" ] || stop "Not enough free disk space: $FREE_GB GB free, Reel Studio needs $NEED_GB GB. Empty the Bin and delete big files you do not need (System Settings > General > Storage), then run the installer again."
 
 # Reel Studio always lives in ~/ReelStudio. Run from somewhere else (Downloads, AirDrop), it copies
 # itself there first. Her reels, pictures and music in an existing ~/ReelStudio are never touched.
