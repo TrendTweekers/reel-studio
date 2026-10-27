@@ -93,7 +93,8 @@ PY="$(brew --prefix python@3.12)/bin/python3.12"
 echo "Downloading the speech model (1.6 GB). This is the slowest part: 5 to 15 minutes."
 .venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8', download_root='models')"
 echo "Downloading the face and person finder models..."
-.venv/bin/python -c "import sys; sys.path.insert(0,'tools'); import faces, cutout, cover_frames; from _common import model_file; [model_file(n,u) for n,u in faces.MODELS.values()]; model_file('selfie_multiclass_256x256.tflite', cutout.URL); model_file('selfie_segmenter.tflite', cutout.URL_BIN); model_file('face_landmarker.task', cover_frames.URL)"
+.venv/bin/python -c "import sys; sys.path.insert(0,'tools'); import _facedet, cutout, cover_frames; from _common import model_file; model_file(*_facedet.SHORT); model_file('selfie_multiclass_256x256.tflite', cutout.URL); model_file('selfie_segmenter.tflite', cutout.URL_BIN); model_file('face_landmarker.task', cover_frames.URL)" \
+  || echo "Could not download them now. Reel Studio downloads them the first time it needs them."
 
 say "6/8  A browser for the editor"
 HAVE_BROWSER=0
