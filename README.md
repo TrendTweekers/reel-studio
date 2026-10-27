@@ -9,6 +9,10 @@ pojawiają się słowo po słowie, a wygląd zmieniasz jednym kliknięciem albo 
 zwykłymi słowami. Wszystko działa na Twoim Macu, z Twoją subskrypcją Claude. Filmy nie
 opuszczają Twojego komputera.*
 
+Before you film and after you post, Claude also helps with Instagram: hooks and scripts, a
+week plan, caption checks, replies and DMs. *Przed nagraniem i po publikacji Claude pomaga też
+z Instagramem: hooki i scenariusze, plan tygodnia, opisy, odpowiedzi i wiadomości.*
+
 ## Install / Instalacja
 
 You need / Potrzebujesz:
@@ -49,3 +53,7 @@ Run the same line again. Your reels, pictures, music and styles stay.
   (analysis), Claude Code (`claude -p`) for the chat box. No API key is used or needed.
 - Remotion is free for individuals and companies with up to 3 people
   ([licence](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md)).
+- Instagram know-how (`.claude/skills/ig-*`): Jake Schincariol's
+  [instagram-agent-skill](https://github.com/Jakeschincariol/instagram-agent-skill) (MIT, commit
+  `d03c56b`), adapted for Polish and this app. In Claude Desktop the connector gives the same guides
+  and checks (`instagram_guide`, `instagram_check`).

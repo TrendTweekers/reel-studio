@@ -30,8 +30,10 @@ if [ "$SRC" != "$TARGET" ]; then
   mkdir -p "$TARGET"
   rsync -a --exclude /node_modules --exclude /.venv --exclude /models --exclude '/projects/*' --exclude '/board/*' \
     --exclude '/assets/music/*' --exclude '/styles/*' --exclude /settings.json --exclude /brand.md \
-    --exclude /vocabulary.txt --exclude /keywords.md --exclude /.install-ok "$SRC/" "$TARGET/"
+    --exclude /vocabulary.txt --exclude /keywords.md --exclude '/instagram/*' --exclude /.install-ok "$SRC/" "$TARGET/"
   [ -f "$TARGET/brand.md" ] || cp "$SRC/brand.md" "$TARGET/brand.md"
+  mkdir -p "$TARGET/instagram/drafts"
+  [ -f "$TARGET/instagram/voice.md" ] || cp "$SRC/instagram/voice.md" "$TARGET/instagram/voice.md"
   if [ ! -f "$TARGET/vocabulary.txt" ]; then
     if [ -f "$SRC/vocabulary.txt" ]; then cp "$SRC/vocabulary.txt" "$TARGET/vocabulary.txt"; else : > "$TARGET/vocabulary.txt"; fi
   fi

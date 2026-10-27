@@ -64,6 +64,16 @@ pauses never moves an effect away from its word.
 - Build a NEW kind of effect into the app: `/reel-new-effect` (code change, test it well).
 - Remotion know-how (the video engine): `/remotion-best-practices` and the other remotion-* skills.
 
+Before filming and after posting (the ig-* skills, Instagram know-how; they only write, she posts):
+- Reel idea to hook, script and timed beat sheet: `/ig-reel`. Hook ideas also for `/reel-caption`.
+- What works in her niche now: `/ig-viral`. The week plan: `/ig-plan`.
+- Caption check (what the feed shows before "more"): `/ig-caption`. Clean AI tells: `/ig-human`.
+- Carousels `/ig-carousel`, stories `/ig-story`, profile score `/ig-profile`.
+- Replies under her post `/ig-reply`, comments on others `/ig-comment`, DMs and the keyword
+  delivery `/ig-dm`, one long video into a week of posts `/ig-repurpose`, post-mortem `/ig-audit`.
+- Her voice for all of them: `instagram/voice.md`. If it is still mostly empty, fill it with her
+  first (ask her, or read 3 of her reels with `npm run transcript`).
+
 ## Fix the subtitles after import
 
 After a new reel is ready, offer to proofread the words. Run `npm run words -- <slug>` and read the
@@ -76,7 +86,8 @@ speech model reads that file for every new video. Tell her what you fixed in pla
 ## The Ask box on the page
 
 The Ask box on the editor page can only run: `npm run words|transcript|check`, `curl -s` against
-localhost:8787, `ls`, and `open` of files inside the app folder. Anything else (import of a file
+localhost:8787, `ls`, `open` of files inside the app folder, the ig-* scripts
+(`.venv/bin/python .claude/skills/ig-*/...`) and writing files in `instagram/`. Anything else (import of a file
 from Downloads, building a new effect, `npx`, `python3`) must be done from the "Ask Claude" window
 ("Ask Claude.command" in the ReelStudio folder). If she asks for such a job from the page, tell her
 in one sentence to open "Ask Claude.command" and ask again there.

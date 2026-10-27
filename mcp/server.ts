@@ -339,6 +339,7 @@ PICTURES AND MUSIC: use only her own board pictures (list_board) and her own mus
 NEVER delete a reel, a picture or a video file (there are no tools for it; she does that on the page herself). NEVER post anything to Instagram or TikTok; she posts herself.
 AFTER A NEW REEL: offer to proofread the subtitles (get_words, then fix_word for misheard brand and fashion words).
 MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then tell her where the file is (show_in_finder) and that she can AirDrop it to her phone.
+INSTAGRAM (before filming, after posting): for a reel idea, script or hooks, a caption check, a week plan, replies, DMs, carousels, stories or a profile check, call instagram_guide with the job and follow it. These tools work without Reel Studio open.
 If a tool says Reel Studio is not open, call open_reel_studio.`;
 
 const server = new McpServer({ name: 'reel-studio', version: '1.0.0' }, { instructions: INSTRUCTIONS });
@@ -995,6 +996,118 @@ tool(
     const img = await smallJpeg(`${ORIGIN}/media/${enc(slug)}/proxy.mp4`, 540, src);
     const text = `${head}\nPlain video frame only, because ${why}. On screen at this moment:\n${desc || '(no text or effects)'}`;
     return img ? [{ type: 'text', text }, { type: 'image', data: img, mimeType: 'image/jpeg' }] : `${text}\n(No picture: ffmpeg is missing.)`;
+  },
+);
+
+// ----- Instagram know-how (the ig-* skills from Jake Schincariol's instagram-agent-skill, MIT) -----
+// Claude Desktop does not load skill folders, so these tools hand over the same guides and scripts.
+const IG_SKILLS = {
+  'ig-reel': 'reel idea to 3 hooks, spoken script, on-screen text and a timed beat sheet',
+  'ig-viral': 'find what works in her niche now, ranked by how far each reel beat its own account',
+  'ig-caption': 'the caption, checked: what the feed shows before "more", length, hashtags, search terms',
+  'ig-carousel': 'swipe posts: cover, slide copy, 1080x1350 slides',
+  'ig-story': 'the daily story sequence and stickers',
+  'ig-profile': 'score her profile out of 100 and rewrite what lost points',
+  'ig-plan': 'the week plan: what to post, which format, when, accounts to engage with',
+  'ig-human': 'remove AI tells (em dashes, stock phrases, invisible characters) from a draft',
+  'ig-comment': 'comments she writes on other people\'s posts',
+  'ig-reply': 'replies under her own post, sorted (keyword, lead, question...)',
+  'ig-dm': 'DMs: the keyword delivery (ebook link), first message, collab pitch, follow-ups',
+  'ig-repurpose': 'one long video into a week of reels and carousels',
+  'ig-audit': 'post-mortem on what she already posted',
+} as const;
+const IG_DIR = path.join(ROOT, 'instagram');
+const IG_NOTES = ['voice', 'swipe', 'plan', 'log'] as const;
+const IG_SCRIPTS = {
+  hooks: ['ig-reel/hookscore.py', 'text = one hook per line. Ranks them. On Polish, trust the dealbreaker notes more than the number.'],
+  beats: ['ig-reel/beats.py', 'text = the spoken script, one beat per line. Times each beat; flags a slow hook, long beats, no loop.'],
+  caption: ['ig-caption/caption.py', 'text = the caption. Shows what the feed shows before "more", length, hashtags, search terms.'],
+  humanize: ['ig-human/humanize.py', 'text = a draft. Returns it cleaned (em dashes, curly quotes, invisible characters) plus a report.'],
+  detect: ['ig-human/detect.py', 'text = a draft. Scores AI tells. English only: on Polish, read the notes, ignore the HUMAN SCORE.'],
+} as const;
+const igGuides = Object.entries(IG_SKILLS).map(([k, v]) => `${k}: ${v}`).join('\n');
+
+const runPython = (script: string, args: string[], input: string) =>
+  new Promise<string>((resolve, reject) => {
+    const venv = path.join(ROOT, '.venv', 'bin', 'python');
+    const py = fs.existsSync(venv) ? venv : 'python3';
+    const p = spawn(py, [path.join(ROOT, '.claude', 'skills', script), ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => p.kill(), 30000);
+    p.stdout.on('data', (d) => (out += d));
+    p.stderr.on('data', (d) => (err += d));
+    p.on('error', (e) => (clearTimeout(timer), reject(e)));
+    p.on('close', (code) => {
+      clearTimeout(timer);
+      // humanize --report writes the report to stderr and the clean text to stdout; the others exit 1 on warnings.
+      const all = [out.trim(), err.trim()].filter(Boolean).join('\n\n');
+      if (!all && code !== 0) reject(new Error(`the check stopped (code ${code})`));
+      else resolve(all);
+    });
+    p.stdin.end(input);
+  });
+
+tool(
+  'instagram_guide',
+  `Instagram know-how for BEFORE she films and AFTER she posts. Returns the full guide for one job; read it and follow it. These only write text: she posts, comments and sends DMs herself. Write in Polish unless she asks otherwise, in her voice (instagram_notes voice + get_preferences). Jobs:\n${igGuides}`,
+  { skill: z.enum(Object.keys(IG_SKILLS) as [keyof typeof IG_SKILLS, ...(keyof typeof IG_SKILLS)[]]) },
+  READ,
+  async ({ skill }) => {
+    const text = fs.readFileSync(path.join(ROOT, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    return `${text}\n\n---\nIN THIS CHAT: where the guide says to run a .py script, call instagram_check instead. Where it says to read or write a file in instagram/ (voice.md, swipe.md, plan.md, log.md), use instagram_notes and save_instagram_note.`;
+  },
+);
+
+tool(
+  'instagram_check',
+  `Run one of the Instagram checks on a text and get the result. Checks:\n${Object.entries(IG_SCRIPTS).map(([k, [, d]]) => `${k}: ${d}`).join('\n')}`,
+  {
+    check: z.enum(Object.keys(IG_SCRIPTS) as [keyof typeof IG_SCRIPTS, ...(keyof typeof IG_SCRIPTS)[]]),
+    text: z.string().min(1).max(20000),
+    keywords: z.string().optional().describe('caption only: comma-separated search phrases, e.g. "botki na jesień"'),
+    targetSeconds: z.number().min(5).max(180).optional().describe('beats only: the length she wants'),
+  },
+  READ,
+  async ({ check, text, keywords, targetSeconds }) => {
+    const [script] = IG_SCRIPTS[check];
+    const args = ['-'];
+    if (check === 'caption' && keywords) args.push('--keywords', keywords);
+    if (check === 'beats' && targetSeconds) args.push('--target', String(targetSeconds));
+    if (check === 'humanize') args.push('--report');
+    return (await runPython(script, args, text)) || '(no output)';
+  },
+);
+
+tool(
+  'instagram_notes',
+  'Read one of her Instagram notes: voice (how she talks, what she sells; fill it WITH her if it is mostly empty), swipe (what works in her niche, from ig-viral), plan (this week, from ig-plan), log (what she posted).',
+  { name: z.enum(IG_NOTES) },
+  READ,
+  async ({ name }) => {
+    try {
+      return fs.readFileSync(path.join(IG_DIR, `${name}.md`), 'utf8');
+    } catch {
+      return `No ${name} note yet.`;
+    }
+  },
+);
+
+tool(
+  'save_instagram_note',
+  'Save one of her Instagram notes (voice, swipe, plan, log). mode "replace" writes the whole note (read it first and keep what is still true); "append" adds to the end (use for log). Never put passwords or private data of other people in it.',
+  { name: z.enum(IG_NOTES), text: z.string().min(1).max(50000), mode: z.enum(['replace', 'append']) },
+  WRITE,
+  async ({ name, text, mode }) => {
+    fs.mkdirSync(IG_DIR, { recursive: true });
+    const file = path.join(IG_DIR, `${name}.md`);
+    if (mode === 'append') fs.appendFileSync(file, (text.startsWith('\n') ? '' : '\n') + text.replace(/\s*$/, '\n'));
+    else {
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, text.replace(/\s*$/, '\n'));
+      fs.renameSync(tmp, file);
+    }
+    return `Saved the ${name} note.`;
   },
 );
 

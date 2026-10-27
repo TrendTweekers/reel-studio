@@ -22,3 +22,6 @@ vocabulary.local.txt
 keywords.md
 __pycache__/
 *.pyc
+instagram/*
+!instagram/voice.md
+!instagram/voice.template.md

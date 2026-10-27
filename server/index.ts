@@ -1067,6 +1067,7 @@ const ALLOWED_TOOLS = [
   ...HOSTS.map((h) => `Bash(curl -s -X PUT ${h}/*)`),
   'Bash(ls *)',
   'Bash(open projects/*)',
+  'Bash(.venv/bin/python .claude/skills/ig-*)',
 ];
 // Edit rules cover every file-changing tool; Write is listed as well to be explicit.
 const PROTECTED = ['package.json', 'package-lock.json', '*.command', 'server/**', 'src/**', 'tools/**', 'web/**', 'scripts/**', 'install.sh', '.claude/settings.json', '.claude/settings.local.json'];
