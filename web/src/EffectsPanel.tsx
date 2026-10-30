@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { Edit, Effect, EffectPosition, SfxName } from '../../src/shared/types';
-import { LONG_KINDS, SCENE_KINDS, SFX_NAMES } from '../../src/shared/types';
+import type { Edit, Effect, EffectPosition, ReelClip, SfxName } from '../../src/shared/types';
+import { LONG_KINDS, REEL_KINDS, SCENE_KINDS, SFX_NAMES } from '../../src/shared/types';
 import { sourceToOutput } from '../../src/shared/time';
 import type { FileItem, SfxItem } from './api';
 import type { Change } from './Editor';
@@ -12,12 +12,12 @@ import type { UsedBy } from './Editor';
 import { sfxLabel } from './i18n';
 
 const POSITIONS: EffectPosition[] = ['auto', 'top', 'bottom', 'left', 'right', 'above-head', 'center'];
-const TEXT_KINDS = new Set(['label', 'glass', 'behind', 'chapter', 'emoji', 'cover', 'chart', 'ui', 'doodle']);
+const TEXT_KINDS = new Set(['label', 'glass', 'behind', 'chapter', 'emoji', 'cover', 'chart', 'ui', 'doodle', 'folder', 'files', 'polaroid']);
 const PICTURE_KINDS = new Set(['picture', 'phone', 'greenscreen', 'framebreak', 'papercut', 'orbit']);
 const NEEDS_PICTURE = new Set(['picture', 'phone']); // the others may have none (greenscreen: cream studio)
-const ITEM_KINDS = new Set(['checklist', 'cover', 'orbit', 'ui', 'chart']);
+const ITEM_KINDS = new Set(['checklist', 'cover', 'orbit', 'ui', 'chart', 'files']);
 // Effects that place themselves around her (no position choice).
-const SELF_PLACED = new Set<string>([...SCENE_KINDS, 'flash', 'zoom', 'orbit', 'doodle', 'ui']);
+const SELF_PLACED = new Set<string>([...SCENE_KINDS, ...REEL_KINDS, 'flash', 'zoom', 'orbit', 'doodle', 'ui']);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function EffectsPanel({
@@ -31,6 +31,7 @@ export function EffectsPanel({
   seekSource,
   sfx,
   long,
+  reels = [],
 }: {
   edit: Edit;
   change: Change;
@@ -42,6 +43,7 @@ export function EffectsPanel({
   seekSource: (t: number) => void;
   sfx: SfxItem[];
   long?: boolean; // a long YouTube video shows only LONG_KINDS and has no sound effects
+  reels?: ReelClip[]; // her finished reels, for envelope, folder, polaroid, ...
 }) {
   const { t } = useT();
   const list = sortEffects(long ? edit.effects.filter((fx) => LONG_KINDS.includes(fx.kind)) : edit.effects);
@@ -84,7 +86,7 @@ export function EffectsPanel({
                   ) : null}
                 </span>
               </button>
-              {isSel && <FxDetail long={long} fx={fx} update={update} change={change} board={board} setBoard={setBoard} usedBy={usedBy} edit={edit} sfx={sfx} boardUrl={boardUrl} seekSource={seekSource} onDelete={() => setSelected(null)} />}
+              {isSel && <FxDetail long={long} fx={fx} update={update} change={change} board={board} setBoard={setBoard} usedBy={usedBy} edit={edit} sfx={sfx} reels={reels} boardUrl={boardUrl} seekSource={seekSource} onDelete={() => setSelected(null)} />}
             </li>
           );
         })}
@@ -106,8 +108,10 @@ function FxDetail({
   seekSource,
   onDelete,
   long,
+  reels,
 }: {
   long?: boolean;
+  reels: ReelClip[];
   fx: Effect;
   update: (id: string, patch: Partial<Effect>, key?: string) => void;
   change: Change;
@@ -162,9 +166,11 @@ function FxDetail({
         </div>
       )}
 
+      {REEL_KINDS.includes(fx.kind) && <ReelPicker fx={fx} reels={reels} update={update} />}
+
       {TEXT_KINDS.has(fx.kind) && (
         <label className="field">
-          <span>{t('text')}</span>
+          <span>{REEL_KINDS.includes(fx.kind) ? t(`text_${fx.kind}` as StrKey) : t('text')}</span>
           <input value={fx.text ?? ''} onChange={(e) => update(fx.id, { text: e.target.value }, 'text')} />
         </label>
       )}
@@ -256,6 +262,39 @@ function FxDetail({
           {t('delete')}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Which of her reels the effect shows. None picked = her newest reels. Without finished reels the
+// effect shows short parts of this video instead.
+function ReelPicker({ fx, reels, update }: { fx: Effect; reels: ReelClip[]; update: (id: string, patch: Partial<Effect>, key?: string) => void }) {
+  const { t } = useT();
+  const picked = (fx.reels ?? []).filter((s) => reels.some((r) => r.slug === s));
+  const toggle = (slug: string) => {
+    const next = picked.includes(slug) ? picked.filter((s) => s !== slug) : [...picked, slug];
+    update(fx.id, { reels: next.length ? next : undefined });
+  };
+  return (
+    <div className="group">
+      <div className="group-label">{t('reelsToShow')}</div>
+      {!reels.length ? (
+        <p className="muted small">{t('reelsNone')}</p>
+      ) : (
+        <>
+          <div className="chips">
+            <button className={`chip ${picked.length ? '' : 'on'}`} aria-pressed={!picked.length} onClick={() => update(fx.id, { reels: undefined })}>
+              {t('reelsNewest')}
+            </button>
+            {reels.map((r) => (
+              <button key={r.slug} className={`chip ${picked.includes(r.slug) ? 'on' : ''}`} aria-pressed={picked.includes(r.slug)} onClick={() => toggle(r.slug)} title={r.title}>
+                {r.title.length > 28 ? `${r.title.slice(0, 27)}…` : r.title}
+              </button>
+            ))}
+          </div>
+          <p className="muted small">{t('reelsHelp')}</p>
+        </>
+      )}
     </div>
   );
 }

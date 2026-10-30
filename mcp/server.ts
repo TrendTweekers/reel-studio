@@ -211,10 +211,12 @@ const keepRange = (segs: Segment[], a: number, b: number): Segment[] => normaliz
 const KINDS = [
   'picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'checklist', 'flash', 'phone', 'emoji',
   'chart', 'cover', 'framebreak', 'papercut', 'greenscreen', 'orbit', 'doodle', 'ui', 'vertigo', 'pullback', 'zoomthrough',
+  'envelope', 'folder', 'polaroid', 'conveyor', 'files', 'clothesline',
 ] as const;
 const DEFAULT_DURATION: Record<EffectKind, number> = {
   picture: 1.6, label: 1.4, zoom: 0.8, glass: 1.6, behind: 2.0, chapter: 2.0, emoji: 1.0, checklist: 3.5, flash: 0.2, phone: 2.0,
   framebreak: 2.5, papercut: 2.0, vertigo: 2.2, pullback: 2.2, greenscreen: 3.0, cover: 2.8, zoomthrough: 0.6, orbit: 3.0, doodle: 2.0, ui: 3.0, chart: 3.2,
+  envelope: 3.0, folder: 3.0, polaroid: 3.2, conveyor: 3.5, files: 3.5, clothesline: 3.2,
 };
 const shortId = () => Math.random().toString(36).slice(2, 8);
 const cleanWord = (s: string) => s.replace(/[.,!?;:„”"“…]+/g, '').trim();
@@ -418,13 +420,14 @@ tool(
   },
 );
 
-tool('list_reels', 'List all her reels, newest first: name (slug), title, state, and which long video a clip comes from.', {}, READ, async () => {
+tool('list_reels', 'List all her reels, newest first: name (slug), title, state, which long video a clip comes from, and [has video] when a finished video exists (only those can show in envelope, folder, polaroid, conveyor, files, clothesline).', {}, READ, async () => {
   const items = await api<{ slug: string; title: string; createdAt: string; status: Status; parent?: string | null }[]>('GET', '/api/projects');
   if (!items.length) return 'No reels yet. She can drop a video from her phone on the editor page.';
+  const withVideo = new Set((await api<{ slug: string }[]>('GET', '/api/reels').catch(() => [])).map((r) => r.slug));
   return items
     .map((p) => {
       const st = p.status.step === 'ready' ? 'ready' : p.status.step === 'error' ? `error: ${p.status.message ?? ''}` : `${p.status.step} ${Math.round(p.status.progress * 100)}%`;
-      return `${p.slug}  "${p.title}"  [${st}]${p.parent ? `  (clip of ${p.parent})` : ''}${p.createdAt ? `  ${p.createdAt.slice(0, 16).replace('T', ' ')}` : ''}`;
+      return `${p.slug}  "${p.title}"  [${st}]${p.parent ? `  (clip of ${p.parent})` : ''}${withVideo.has(p.slug) ? '  [has video]' : ''}${p.createdAt ? `  ${p.createdAt.slice(0, 16).replace('T', ' ')}` : ''}`;
     })
     .join('\n');
 });
@@ -634,8 +637,9 @@ tool(
 // ----- effects -----
 const fieldsShape = z
   .object({
-    text: z.string().describe('label, glass, behind, chapter, emoji; cover title; chart title; ui main text (notification/search); doodle hand-written word'),
-    items: z.array(z.string()).describe('checklist items; cover lines (2-4); orbit words (1-6); ui extra card texts; chart bars "Label: number" (2-6)'),
+    text: z.string().describe('label, glass, behind, chapter, emoji; cover title; chart title; ui main text (notification/search); doodle hand-written word; folder label, files window title, polaroid note (all optional)'),
+    items: z.array(z.string()).describe('checklist items; cover lines (2-4); orbit words (1-6); ui extra card texts; chart bars "Label: number" (2-6); files: file names like "final_FINAL.mp4" (3-5)'),
+    reels: z.array(z.string()).describe('envelope, folder, polaroid, conveyor, files, clothesline: which of her finished reels to show (slugs from list_reels that have a video). Leave out = her newest reels.'),
     image: z.string().describe('board picture file (list_board): picture, phone (required); greenscreen background, framebreak backdrop, papercut paper, orbit picture (optional)'),
     position: z.enum(['auto', 'top', 'bottom', 'left', 'right', 'above-head', 'center']),
     sfx: z.union([z.enum(SFX_NAMES), z.literal('none'), z.literal('default')]),
@@ -661,6 +665,14 @@ const neighbours = (e: Edit, fx: Effect) => {
   const close = e.effects.filter((x) => x.id !== fx.id && x.kind !== 'flash').map((x) => ({ x, d: (sourceToOutput(x.at, e.segments) ?? 1e9) - at })).filter((n) => Math.abs(n.d) < 2);
   return close.length ? `\nTaste note: ${close.map((n) => `${n.x.kind} "${n.x.word ?? ''}" ${Math.abs(n.d).toFixed(1)} s ${n.d < 0 ? 'before' : 'after'}`).join(', ')}. Keep about 2 to 4 s between effects.` : '';
 };
+// "Show my reels" effects can only play reels that have a finished video.
+const checkReels = async (slug: string, fields: { reels?: string[] }) => {
+  if (!fields.reels?.length) return;
+  const ready = await api<{ slug: string; title: string }[]>('GET', `/api/reels?not=${enc(slug)}`);
+  const bad = fields.reels.filter((r) => !ready.some((x) => x.slug === r));
+  if (bad.length)
+    throw new UserError(`These reels have no finished video yet: ${bad.join(', ')}. Reels with a video: ${ready.map((x) => `${x.slug} ("${x.title}")`).join(', ') || 'none yet'}.`);
+};
 const checkImage = async (fields: { image?: string }) => {
   if (!fields.image) return;
   const board = await listFiles('board');
@@ -670,6 +682,7 @@ tool(
   'add_effect',
   `Add one effect on a word. kinds: picture (her board picture pops in; needs image), label (small tag with text), zoom (punch-in on her face; scale), glass (big frosted text), behind (big text behind her; needs the cut-out, started automatically), chapter (title like "[o stylu]"), checklist (items tick one by one), flash (quick white flash), phone (phone mock-up with a board picture), emoji (one big emoji in text).
 BIG MOMENTS (use 1-2 per reel, on the key line): chart (a chart card that grows; text = title, items = "Label: number" bars), cover (she is on a magazine cover; text = big title like "STYL", items = 2-3 cover lines), framebreak (video becomes a framed photo and she steps out of it; cut-out), papercut (she becomes a paper cut-out sticker; cut-out), greenscreen (she stands in front of a board picture, or a cream studio backdrop without image; cut-out), orbit (words in items, or a picture, circle around her head), doodle (hand-drawn doodles wiggle around her; text optional), ui (phone-style cards float around her: notification/search with text, items = more cards), vertigo (the room stretches away, she stays; cut-out), pullback (starts close, pulls back to reveal), zoomthrough (0.6 s fast zoom into the next shot; put it on the first word after a cut). Cut-out effects start the cut-out automatically.
+SHOW MY REELS (her other finished reels play in small cards; use when she talks about her reels, her work, editing, "my content"; 1 per reel): envelope (an envelope flips in behind her head and reels pour out), folder (a cursor clicks a folder and reels fan out; text = optional folder label), polaroid (a camera prints a Polaroid that develops into a reel; text = optional note), conveyor (reels ride a conveyor belt behind her), files (a file window, the cursor clicks final_FINAL.mp4 files and each plays; items = file names, text = window title), clothesline (reels hang on a line with pegs, then get pulled away). fields.reels = which reels (slugs from list_reels); leave out for her newest. Without finished reels they show parts of this video.
 Place it with wordIndex from get_words (best) or sourceSeconds.`,
   {
     slug: slugArg,
@@ -682,6 +695,7 @@ Place it with wordIndex from get_words (best) or sourceSeconds.`,
   async ({ slug, kind, wordIndex, sourceSeconds, fields = {} }) => {
     if ((kind === 'picture' || kind === 'phone') && !fields.image) throw new UserError('This effect needs a board picture (image). Call list_board.');
     await checkImage(fields);
+    await checkReels(slug, fields);
     let added: Effect | null = null;
     let startCutout = false;
     const { edit } = await mutate(slug, (e, p) => {
@@ -695,6 +709,7 @@ Place it with wordIndex from get_words (best) or sourceSeconds.`,
       if (kind === 'cover') fx.text = (place.word ?? 'STYL').toUpperCase();
       if (kind === 'orbit') fx.items = [place.word ?? ''];
       if (kind === 'ui' || kind === 'chart') fx.text = place.word;
+      if (kind === 'files') fx.items = ['final.mp4', 'final_FINAL.mp4', 'final_FINAL_v2.mp4', 'final_FINAL_naprawdę.mp4'];
       if (kind === 'zoom') {
         fx.scale = 1.25;
         fx.sfx = 'none';
@@ -715,11 +730,12 @@ Place it with wordIndex from get_words (best) or sourceSeconds.`,
 );
 tool(
   'update_effect',
-  'Change one effect (id from get_reel): move it to another word (wordIndex) or time (sourceSeconds), or change its fields (text, items, image, position, sfx, scale, duration).',
+  'Change one effect (id from get_reel): move it to another word (wordIndex) or time (sourceSeconds), or change its fields (text, items, image, reels, position, sfx, scale, duration).',
   { slug: slugArg, id: z.string(), wordIndex: z.number().int().min(0).optional(), sourceSeconds: z.number().min(0).optional(), fields: fieldsShape.optional() },
   WRITE,
   async ({ slug, id, wordIndex, sourceSeconds, fields = {} }) => {
     await checkImage(fields);
+    await checkReels(slug, fields);
     let changed: Effect | null = null;
     const { edit } = await mutate(slug, (e, p) => {
       const fx = e.effects.find((x) => x.id === id);

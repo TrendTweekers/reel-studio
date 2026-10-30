@@ -8,30 +8,10 @@ import { AbsoluteFill, interpolate, spring, useCurrentFrame } from 'remotion';
 import { FPS, WIDTH } from '../../shared/types';
 import { CREAM, INK } from '../color';
 import { useReel } from '../context';
-import { clamp, SAFE, SAFE_BOTTOM, type Rect, type TimedEffect, type Zoom } from '../model';
-import { footageFilterFor } from '../parts/Vibe';
+import { clamp, SAFE, SAFE_BOTTOM, type Rect, type TimedEffect } from '../model';
 import { CLAMP, lerp, outro } from './anim';
-import { Person, useAbsFrame, useHasCutout } from './footage';
+import { CamPerson, useAbsFrame, useHasCutout } from './footage';
 import { BoardImage } from './Picture';
-
-const zoomStyle = (z: Zoom): React.CSSProperties => ({
-  transformOrigin: `${z.ox}px ${z.oy}px`,
-  transform: z.s === 1 ? undefined : `scale(${z.s})`,
-});
-
-// Her cut-out exactly where the base layer draws it (same camera punch, same grade filter).
-const CamPerson: React.FC<{ e: TimedEffect }> = ({ e }) => {
-  const { model, props } = useReel();
-  const abs = useAbsFrame(e);
-  const [outer, inner] = model.camera(Math.min(abs, model.total - 1));
-  return (
-    <AbsoluteFill style={{ ...zoomStyle(outer), filter: footageFilterFor(props.edit) }}>
-      <AbsoluteFill style={zoomStyle(inner)}>
-        <Person e={e} />
-      </AbsoluteFill>
-    </AbsoluteFill>
-  );
-};
 
 type Item = { kind: 'word'; text: string } | { kind: 'image'; name: string };
 

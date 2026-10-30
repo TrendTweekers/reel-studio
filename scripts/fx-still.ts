@@ -1,5 +1,5 @@
 // Render one effect on a real reel, to look at it. Needs Reel Studio running (media comes from :8787).
-//   npx tsx scripts/fx-still.ts <slug> '<effect json>' [--at 0.1,0.5,0.9] [--out dir] [--video] [--keep]
+//   npx tsx scripts/fx-still.ts <slug> '<effect json>' [--at 0.1,0.5,0.9] [--out dir] [--video] [--keep] [--no-reels] [--no-cutout]
 // The effect JSON is an Effect without id; "at" = source seconds (default: 8). Only this effect is
 // shown (hook off, other effects removed) unless --keep. --at = fractions of the effect's length.
 // --video also renders the effect window (+0.5 s each side) as an mp4 to check the motion.
@@ -10,6 +10,7 @@ import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { FPS, type Edit, type Effect, type ReelProps } from '../src/shared/types';
 import { sourceToOutput } from '../src/shared/time';
+import { herReels } from '../server/reels';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [slug, json, ...rest] = process.argv.slice(2);
@@ -43,6 +44,7 @@ const inputProps: ReelProps = {
     sfx: `${ORIGIN}/sfx/`,
     music: `${ORIGIN}/music/`,
   },
+  reels: rest.includes('--no-reels') ? [] : herReels(path.join(ROOT, 'projects'), ORIGIN, slug),
 };
 const startOut = sourceToOutput(fx.at, edit.segments);
 if (startOut === null) throw new Error(`at=${fx.at} is inside a cut-out pause; pick another time`);

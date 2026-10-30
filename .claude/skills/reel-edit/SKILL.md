@@ -44,6 +44,16 @@ The whole edit of a reel is `projects/<slug>/edit.json`. The editor page shows y
   - App cards: `{"kind":"ui","text":"botki na jesień","items":["Nowa wiadomość: gdzie kupiłaś?"],"duration":3}`.
   - Pull-back reveal `pullback` (2.2 s) and zoom-through cut `zoomthrough` (0.6 s, on the first word
     after a cut): no fields.
+- Show my reels (her OTHER finished reels play muted in small cards; 1 per reel, when she talks about
+  her reels, her work or editing). Optional `reels` = slugs of reels that have a finished video in
+  `projects/<slug>/out/`; leave it out for her newest. With no finished reels they show parts of this video.
+  - Envelope `{"kind":"envelope","duration":3}`: flips in behind her head, reels pour out.
+  - Folder `{"kind":"folder","text":"moje rolki","duration":3}`: a cursor clicks a folder, reels fan out (text optional).
+  - Polaroid `{"kind":"polaroid","text":"jesień 2026","duration":3.2}`: a camera prints a Polaroid that develops into a reel (text optional).
+  - Conveyor `{"kind":"conveyor","duration":3.5}`: reels ride a conveyor belt behind her.
+  - File preview `{"kind":"files","items":["final.mp4","final_FINAL.mp4","final_FINAL_v2.mp4"],"duration":3.5}`: the cursor clicks file after file, each plays.
+  - Clothesline `{"kind":"clothesline","duration":3.2}`: reels hang on a line with pegs, then get pulled away.
+  Envelope, conveyor and clothesline go behind her when the cut-out exists (start it as for "behind").
   Then look at your work with `npm run look -- <slug> '<effect json>' --keep`
   (renders 3 stills of the reel with that effect added into `fx-test/`; Read the jpg files).
 - Cut a part: remove that time range from `segments` (split a segment in two around it). Keep a

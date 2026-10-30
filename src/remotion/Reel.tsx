@@ -40,7 +40,7 @@ export const Reel: React.FC<ReelProps> = (props) => {
         ) : null}
         <Effects kinds={SCENE_KINDS} />
         <Hook />
-        <Effects kinds={['orbit', 'doodle', 'ui', 'picture', 'phone', 'label', 'emoji', 'glass', 'chapter', 'checklist', 'chart']} />
+        <Effects kinds={['envelope', 'folder', 'polaroid', 'conveyor', 'files', 'clothesline', 'orbit', 'doodle', 'ui', 'picture', 'phone', 'label', 'emoji', 'glass', 'chapter', 'checklist', 'chart']} />
         <Subtitles />
         <Effects kinds={['flash']} />
         <EndCard />

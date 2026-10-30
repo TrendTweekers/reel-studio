@@ -132,6 +132,12 @@ export const DEFAULT_DURATION: Record<EffectKind, number> = {
   doodle: 2.0,
   ui: 3.0,
   chart: 3.2,
+  envelope: 3.0,
+  folder: 3.0,
+  polaroid: 3.2,
+  conveyor: 3.5,
+  files: 3.5,
+  clothesline: 3.2,
 };
 
 export const KIND_ICON: Record<EffectKind, string> = {
@@ -156,6 +162,12 @@ export const KIND_ICON: Record<EffectKind, string> = {
   doodle: '✎',
   ui: '▤',
   chart: '▥',
+  envelope: '✉',
+  folder: '▭',
+  polaroid: '◫',
+  conveyor: '⇶',
+  files: '☰',
+  clothesline: '⌒',
 };
 
 export const shortId = () => Math.random().toString(36).slice(2, 8);
@@ -207,6 +219,9 @@ export const newEffect = (kind: EffectKind, w: Word, displayText: string, image?
     case 'chart':
       e.text = word;
       e.items = ['2024: 20', '2025: 45', '2026: 90'];
+      break;
+    case 'files':
+      e.items = ['final.mp4', 'final_FINAL.mp4', 'final_FINAL_v2.mp4', 'final_FINAL_naprawdę.mp4'];
       break;
     default:
       break;

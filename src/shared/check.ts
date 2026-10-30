@@ -15,6 +15,7 @@ export type Problem = {
 export const KINDS = [
   'picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'checklist', 'flash', 'phone', 'emoji',
   'framebreak', 'papercut', 'vertigo', 'pullback', 'greenscreen', 'cover', 'zoomthrough', 'orbit', 'doodle', 'ui', 'chart',
+  'envelope', 'folder', 'polaroid', 'conveyor', 'files', 'clothesline',
 ];
 // Plain names for her, used in problem sentences.
 const NICE: Record<string, string> = {

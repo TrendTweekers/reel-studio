@@ -5,6 +5,9 @@ import { Audio, interpolate, Sequence } from 'remotion';
 import { FPS, type SfxName } from '../../shared/types';
 import { useReel } from '../context';
 import { checklistTicks } from '../effects/Checklist';
+import { fileClicks } from '../effects/Files';
+import { FOLDER_CLICK_AT } from '../effects/Folder';
+import { POLAROID_SHUTTER_AT } from '../effects/Polaroid';
 import { END_CARD_KEYWORD_AT } from './EndCard';
 import type { TimedEffect } from '../model';
 
@@ -33,6 +36,10 @@ const sfxFor = (e: TimedEffect, fallback: SfxName): SfxName | null => {
   if (e.kind === 'cover' || e.kind === 'framebreak') return 'camera-shutter';
   if (e.kind === 'greenscreen' || e.kind === 'doodle') return 'soft-pop';
   if (e.kind === 'ui') return 'ding';
+  if (e.kind === 'polaroid') return 'camera-shutter';
+  if (e.kind === 'folder') return 'double-click';
+  if (e.kind === 'files') return null; // one click per file instead
+  if (e.kind === 'envelope' || e.kind === 'conveyor' || e.kind === 'clothesline') return 'whoosh';
   if (e.kind === 'checklist') return null; // one click per tick instead
   return fallback;
 };
@@ -50,7 +57,14 @@ export const Sound: React.FC = () => {
       // A sticker that found no room is skipped, and so is its sound.
       if ((e.kind === 'picture' || e.kind === 'phone' || e.kind === 'label' || e.kind === 'chart') && !e.rect) continue;
       const name = sfxFor(e, sound.defaultSfx);
-      if (name) cues.push({ at: e.from, name, key: e.id });
+      // Sounds that land on what you see: the folder double-click, the camera shutter.
+      const lag = e.kind === 'folder' ? FOLDER_CLICK_AT - 3 : e.kind === 'polaroid' ? POLAROID_SHUTTER_AT : 0;
+      if (name) cues.push({ at: e.from + Math.max(0, lag), name, key: e.id });
+      if (e.kind === 'files' && e.sfx !== 'none') {
+        const click: SfxName = e.sfx && e.sfx !== 'default' ? e.sfx : 'click';
+        const files = (e.items ?? []).filter((x) => x.trim()).length || 4;
+        fileClicks(Math.min(5, files), e.frames).forEach((t, i) => cues.push({ at: e.from + t, name: click, key: `${e.id}-click${i}` }));
+      }
       if (e.kind === 'checklist' && e.sfx !== 'none') {
         const tick: SfxName = e.sfx && e.sfx !== 'default' ? e.sfx : 'click';
         checklistTicks(e.frames, (e.items ?? []).length).forEach((t, i) =>

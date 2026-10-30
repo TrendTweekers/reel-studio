@@ -1,4 +1,4 @@
-import type { Edit, Effect, FaceSample, Word } from '../../src/shared/types';
+import type { Edit, Effect, FaceSample, ReelClip, Word } from '../../src/shared/types';
 import type { EditingStyle } from '../../src/shared/styles';
 
 export type StyleItem = EditingStyle & { own: boolean };
@@ -143,6 +143,7 @@ export const api = {
   deleteProject: (slug: string) => req<unknown>('DELETE', `/api/projects/${enc(slug)}`),
   reanalyse: (slug: string) => req<unknown>('POST', `/api/projects/${enc(slug)}/reanalyse`, {}),
   board: () => req<FileItem[]>('GET', '/api/board'),
+  reels: (not: string) => req<ReelClip[]>('GET', `/api/reels?not=${enc(not)}`),
   deleteBoard: (file: string) => req<unknown>('DELETE', `/api/board/${enc(file)}`),
   music: () => req<FileItem[]>('GET', '/api/music'),
   sfx: () => req<SfxItem[]>('GET', '/api/sfx'),

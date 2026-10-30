@@ -24,6 +24,12 @@ import { PullBack } from '../effects/PullBack';
 import { UiWorld } from '../effects/UiWorld';
 import { Vertigo } from '../effects/Vertigo';
 import { ZoomThrough } from '../effects/ZoomThrough';
+import { Clothesline } from '../effects/Clothesline';
+import { Conveyor } from '../effects/Conveyor';
+import { Envelope } from '../effects/Envelope';
+import { Files } from '../effects/Files';
+import { Folder } from '../effects/Folder';
+import { Polaroid } from '../effects/Polaroid';
 
 const render = (e: TimedEffect) => {
   switch (e.kind) {
@@ -67,6 +73,18 @@ const render = (e: TimedEffect) => {
       return <UiWorld e={e} />;
     case 'chart':
       return <ChartGrow e={e} />;
+    case 'envelope':
+      return <Envelope e={e} />;
+    case 'folder':
+      return <Folder e={e} />;
+    case 'polaroid':
+      return <Polaroid e={e} />;
+    case 'conveyor':
+      return <Conveyor e={e} />;
+    case 'files':
+      return <Files e={e} />;
+    case 'clothesline':
+      return <Clothesline e={e} />;
     default:
       return null; // 'zoom' is done by <Camera>
   }

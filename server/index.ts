@@ -23,6 +23,7 @@ import { splitParts } from './split';
 import { mountLooks } from './looks';
 import { autoTitle, isGenericTitle, titleFromWords } from './title';
 import { findRetakes, longFirstEdit, subtract } from './longedit';
+import { herReels } from './reels';
 import { isLong, longSize } from '../src/shared/long';
 import type { ThumbnailProps } from '../src/shared/types';
 
@@ -398,6 +399,7 @@ export const reelProps = (slug: string, origin = ORIGIN): ReelProps => ({
     sfx: `${origin}/sfx/`,
     music: `${origin}/music/`,
   },
+  reels: herReels(PROJECTS, origin, slug),
 });
 
 // "<Title> <dd.mm HH-MM>.mp4" in local time. Polish letters stay; only characters that a Mac or
@@ -1517,6 +1519,11 @@ const intakeHandler = (target: string, kind: 'image' | 'audio') => async (req: e
   }
   res.json({ ok: true, ...r });
 };
+// Her finished reels for the "show my reels" effects (not=<slug> leaves out the reel being edited).
+app.get('/api/reels', (req, res) => {
+  const not = typeof req.query.not === 'string' ? req.query.not : undefined;
+  res.json(herReels(PROJECTS, `${req.protocol}://${req.get('host')}`, not));
+});
 app.get('/api/board', (_req, res) => res.json(listFiles(BOARD, IMAGE).map((f) => ({ file: f, url: `/board/${encodeURIComponent(f)}` }))));
 app.post('/api/board', toTemp.array('images', 200), intakeHandler(BOARD, 'image'));
 app.delete('/api/board/:file', (req, res) => {

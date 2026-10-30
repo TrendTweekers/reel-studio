@@ -10,8 +10,9 @@ zwykłymi słowami. Wszystko działa na Twoim Macu, z Twoją subskrypcją Claude
 opuszczają Twojego komputera.*
 
 After your first video, **My look** shows your own reel in different fonts, colours, subtitles and
-effects: tap what feels like you, and it becomes your style. 21 effects, including frame break,
-paper cut, magazine cover, chart grow, orbit and green screen. *Po pierwszym filmie „Mój styl”
+effects: tap what feels like you, and it becomes your style. 27 effects, including frame break,
+paper cut, magazine cover, chart grow, orbit, green screen, and 6 ways to show your other reels
+(envelope, folder, Polaroid, conveyor belt, file preview, clothesline). *Po pierwszym filmie „Mój styl”
 pokazuje Twoją rolkę w różnych czcionkach, kolorach, napisach i efektach: klikasz, co Ci pasuje,
 i to staje się Twoim stylem.*
 

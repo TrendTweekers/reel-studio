@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { PlayerRef } from '@remotion/player';
-import type { Edit, ReelProps } from '../../src/shared/types';
+import type { Edit, ReelClip, ReelProps } from '../../src/shared/types';
 import { FPS, HOOK_FONTS, SUBTITLE_FONTS } from '../../src/shared/types';
 import { outputFrames, outputToSource, sourceToOutput, totalFrames } from '../../src/shared/time';
 import { defaultLong, isLong, longSize, outputChapters } from '../../src/shared/long';
@@ -131,6 +131,11 @@ export function Editor({ slug }: { slug: string }) {
   const serverOp = useRef(false);
 
   const showToast = useCallback((msg: string, opts?: Omit<Toast, 'msg' | 'id'>) => setToast({ msg, id: Date.now(), ...opts }), []);
+  // Her finished reels, for the "show my reels" effects (envelope, folder, ...).
+  const [reels, setReels] = useState<ReelClip[]>([]);
+  useEffect(() => {
+    api.reels(slug).then(setReels, () => setReels([]));
+  }, [slug]);
   useEffect(() => {
     api.look().then(
       (r) => setLookDone(r.lookDone),
@@ -444,8 +449,9 @@ export function Editor({ slug }: { slug: string }) {
       words: detail.words,
       faces: detail.faces,
       urls: { video: u.video, cutout: detail.hasCutout ? u.cutout : null, board: u.board, sfx: u.sfx, music: u.music },
+      reels,
     };
-  }, [edit, detail, slug]);
+  }, [edit, detail, slug, reels]);
 
   const seekSource = useCallback(
     (src: number) => {
@@ -974,6 +980,7 @@ export function Editor({ slug }: { slug: string }) {
             seekSource={seekSource}
             sfx={sfx}
             long={long}
+            reels={reels}
           />
           {long ? (
             <>

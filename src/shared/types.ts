@@ -83,12 +83,22 @@ export type EffectKind =
   | 'orbit' // words (items) or a picture circle around her head, behind her on the far side
   | 'doodle' // hand-drawn doodles that "boil" (wiggle) around her: hearts, stars, arrows, underline
   | 'ui' // floating app cards around her: notification, search bar, chat bubble, like counter (items)
-  | 'chart'; // a chart card that grows: items "Label: number", title = text
+  | 'chart' // a chart card that grows: items "Label: number", title = text
+  // "Show my reels": her other finished reels (or parts of this video) play in small cards.
+  | 'envelope' // an envelope flips in behind her head and her reels pour out of it
+  | 'folder' // a cursor clicks a folder and her reels fan out across the frame
+  | 'polaroid' // a camera prints a Polaroid that slowly develops into a reel
+  | 'conveyor' // her reels ride along a conveyor belt behind her
+  | 'files' // a file window: the cursor clicks through "final_FINAL.mp4" files, each plays in a preview
+  | 'clothesline'; // her reels hang on a rope with wooden pegs, then get pulled across the screen
+
+// The "show my reels" effects. e.reels = project names to show (empty = her newest reels).
+export const REEL_KINDS: EffectKind[] = ['envelope', 'folder', 'polaroid', 'conveyor', 'files', 'clothesline'];
 
 // Effects that need the person cut-out (cutout.webm). Without it they fall back to a plainer look.
 export const NEEDS_CUTOUT: EffectKind[] = ['behind', 'framebreak', 'papercut', 'vertigo', 'greenscreen'];
 // Effects that look better with the cut-out but work without it.
-export const LIKES_CUTOUT: EffectKind[] = ['cover', 'orbit'];
+export const LIKES_CUTOUT: EffectKind[] = ['cover', 'orbit', 'envelope', 'conveyor', 'clothesline'];
 // Full-frame scenes (drawn above the footage, below hook, cards and subtitles).
 export const SCENE_KINDS: EffectKind[] = ['framebreak', 'papercut', 'vertigo', 'pullback', 'greenscreen', 'cover', 'zoomthrough'];
 
@@ -106,6 +116,7 @@ export type Effect = {
   position?: EffectPosition;
   sfx?: SfxName | 'none' | 'default';
   scale?: number; // zoom: 1.0 = none, 1.25 = normal punch
+  reels?: string[]; // envelope, folder, polaroid, conveyor, files, clothesline: project names (slugs) of her reels to show
 };
 
 export type SubtitleStyle = 'clean' | 'box' | 'karaoke' | 'pop' | 'off';
@@ -293,6 +304,9 @@ export type CoverProps = {
   grid: boolean; // true = render the 1080x1440 grid version
 };
 
+// One of her finished reels that the "show my reels" effects can play (muted) in a card.
+export type ReelClip = { slug: string; title: string; url: string; duration: number };
+
 // What the video component gets. URLs are full http URLs served by the local server,
 // so the editor preview and the final render read the same files.
 export type ReelProps = {
@@ -306,4 +320,7 @@ export type ReelProps = {
     sfx: string; // folder URL, ends with '/'
     music: string; // folder URL, ends with '/'
   };
+  // Her other finished reels, newest first (for envelope, folder, polaroid, ...). Missing = none:
+  // those effects then show short parts of this video instead.
+  reels?: ReelClip[];
 };

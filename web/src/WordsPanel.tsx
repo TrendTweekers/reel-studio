@@ -12,6 +12,8 @@ import { fmtTime, Panel } from './ui';
 const ACTIONS: EffectKind[] = ['picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'emoji', 'checklist', 'flash'];
 // Bigger moments: scenes and animated overlays (the @viiolini set).
 const SCENES: EffectKind[] = ['chart', 'cover', 'framebreak', 'papercut', 'greenscreen', 'orbit', 'doodle', 'ui', 'vertigo', 'pullback', 'zoomthrough'];
+// "Show my reels": her other reels play in small cards (envelope, folder, Polaroid, ...).
+const REEL_FX: EffectKind[] = ['envelope', 'folder', 'polaroid', 'conveyor', 'files', 'clothesline'];
 const COLLAPSE_MIN = 6; // cut stretches at least this long fold into one line
 
 const fold = (s: string) =>
@@ -426,6 +428,17 @@ export function WordsPanel({
                         setMode('picture');
                       }}
                     >
+                      <span className="pop-icon">{KIND_ICON[k]}</span>
+                      {t(`act_${k}` as StrKey)}
+                    </button>
+                  ))}
+                </div>
+                )}
+                {!long && <div className="group-label pop-group">{t('showMyReels')}</div>}
+                {!long && (
+                <div className="pop-grid">
+                  {REEL_FX.map((k) => (
+                    <button key={k} className="pop-act" title={t(`tip_${k}` as StrKey)} onClick={() => add(k)}>
                       <span className="pop-icon">{KIND_ICON[k]}</span>
                       {t(`act_${k}` as StrKey)}
                     </button>
