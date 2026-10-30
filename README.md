@@ -65,14 +65,53 @@ You need / Potrzebujesz:
 5. Open **Reel Studio** from Applications and drag it to the Dock.
    *Otwórz **Reel Studio** z folderu Aplikacje i przeciągnij do Docka.*
 
+## Install on Windows / Instalacja na Windows
+
+You need / Potrzebujesz:
+- A Windows 10 or 11 PC (64-bit, Intel or AMD processor). *Komputer z Windows 10 albo 11
+  (64-bit, procesor Intel albo AMD).*
+- A Claude Pro or Max subscription. *Subskrypcja Claude Pro albo Max.*
+- About 15 GB free disk space and 30 to 45 minutes. *Około 15 GB wolnego miejsca i 30–45 minut.*
+
+1. Open **PowerShell** (press the Windows key, type `PowerShell`, press Enter).
+   *Otwórz **PowerShell** (klawisz Windows, wpisz `PowerShell`, Enter).*
+2. Copy this line, paste it into PowerShell (right click pastes), press Enter.
+   *Skopiuj tę linię, wklej do PowerShell (prawy przycisk myszy wkleja) i naciśnij Enter.*
+
+```powershell
+irm https://raw.githubusercontent.com/TrendTweekers/reel-studio/main/get.ps1 | iex
+```
+
+3. Wait. When Windows asks "Do you want to allow this app to make changes?", click **Yes**.
+   *Poczekaj. Gdy Windows zapyta „Czy chcesz zezwolić tej aplikacji na wprowadzanie zmian?”,
+   kliknij **Tak**.*
+4. At the end, log in to Claude once: a browser window opens. Log in with your Claude account
+   and click **Authorize**. Never choose the API key option.
+   *Na końcu zaloguj się raz do Claude: otworzy się okno przeglądarki. Zaloguj się swoim kontem
+   Claude i kliknij **Authorize**. Nigdy nie wybieraj opcji z kluczem API.*
+5. Open **Reel Studio** from the Desktop icon or the Start menu.
+   *Otwórz **Reel Studio** ikoną na pulpicie albo z menu Start.*
+
+What happens: the line installs what is missing of Git, Node.js, Python 3.12 and FFmpeg (with
+winget), downloads Reel Studio to `%USERPROFILE%\ReelStudio`, installs the app packages, the
+speech model (1.6 GB), Claude Code and the Reel Studio connector for Claude Desktop, and adds the
+"Reel Studio" shortcuts. It does not change the PowerShell security settings.
+*Co się dzieje: linia instaluje to, czego brakuje, pobiera Reel Studio do
+`%USERPROFILE%\ReelStudio` i dodaje skróty „Reel Studio”. Nie zmienia ustawień bezpieczeństwa
+PowerShell.*
+
 ## Update / Aktualizacja
 
-Run the same line again. Your reels, pictures, music and styles stay.
-*Uruchom tę samą linię jeszcze raz. Twoje rolki, zdjęcia, muzyka i style zostają.*
+Run the same line again. Your reels, pictures, music and styles stay. On Windows: the
+PowerShell line, in PowerShell.
+*Uruchom tę samą linię jeszcze raz. Twoje rolki, zdjęcia, muzyka i style zostają. Na Windows:
+linię dla PowerShell, w PowerShell.*
 
 ## For the technical helper
 
 - App folder: `~/ReelStudio`. Logs: `~/Library/Logs/ReelStudio.log` and `ReelStudio-install.log`.
+- Windows: app folder `%USERPROFILE%\ReelStudio`, logs in its `logs\` folder, start and stop
+  scripts in `win\`. Details in SETUP.md.
 - Local server on `127.0.0.1:8787` only. Node + Remotion (video), Python + faster-whisper + MediaPipe
   (analysis), Claude Code (`claude -p`) for the chat box. No API key is used or needed.
 - Remotion is free for individuals and companies with up to 3 people

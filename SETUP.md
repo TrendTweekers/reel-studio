@@ -33,3 +33,45 @@ Every day after that: click Reel Studio in the Dock. That is all.
 - Logs: `~/Library/Logs/ReelStudio.log` (app) and `~/Library/Logs/ReelStudio-install.log` (install).
 - Update later: run `install.sh` from a newer zip the same way (always with `bash install.sh`).
   The user's reels, pictures, music, styles, brand.md and vocabulary.txt are kept.
+
+## Windows 10 and 11 (for Peter)
+
+Takes 30 to 45 minutes, mostly waiting. You need the user's PC (64-bit Intel or AMD, not ARM),
+about 15 GB free space and the user's claude.ai login (Pro or Max). An administrator account
+helps: Node.js and Git ask "Yes/No" once each (UAC). Python and FFmpeg install for the user only.
+
+1. Open **PowerShell** (Windows key, type PowerShell, Enter). Not "as administrator".
+2. Paste the line and press Enter:
+
+       irm https://raw.githubusercontent.com/TrendTweekers/reel-studio/main/get.ps1 | iex
+
+   `get.ps1` installs Git if missing (winget), clones the repo to `%USERPROFILE%\ReelStudio` (or
+   updates it: `git fetch` + `reset --hard`, her `brand.md`, `vocabulary.txt` and
+   `instagram\voice.md` are copied back after, and the git-ignored folders are never touched),
+   then runs `install.ps1` with `-ExecutionPolicy Bypass` for that one process. The system
+   execution policy is not changed.
+3. `install.ps1` prints "Krok 1/7 ... 7/7" with the time per step: winget packages
+   (`OpenJS.NodeJS.LTS`, `Python.Python.3.12` per user, `Gyan.FFmpeg`), stops an old server,
+   `npm ci` + web build + Remotion browser + Remotion skills, `.venv` with `py -3.12` + pip +
+   speech model + face models, Claude Code (official `irm https://claude.ai/install.ps1 | iex`,
+   lands in `%USERPROFILE%\.local\bin\claude.exe`), the Claude Desktop connector, and the
+   "Reel Studio" shortcuts on the Desktop and in the Start menu. At the end it runs
+   `claude auth login --claudeai` when Claude is not logged in yet.
+4. If it says "Coś poszło nie tak / Something went wrong", look at
+   `%USERPROFILE%\ReelStudio\logs\ReelStudio-install.log`, fix the cause and paste the line again.
+   It continues where it stopped.
+
+Every day after that: click **Reel Studio** on the Desktop or in the Start menu.
+
+- The shortcut runs `win\start.ps1` hidden: it starts the server (`node --import <tsx loader>
+  server/index.ts`, one process) if `http://127.0.0.1:8787/api/projects` does not answer, waits up to
+  30 s, then opens Chrome or Edge in app mode. Without `.install-ok` it runs the installer instead.
+- Stop the app: double-click `win\Stop Reel Studio.cmd` (ends the node process on port 8787).
+- Talk to Claude in the app folder: `win\Ask Claude.cmd` (also the way to log in later).
+- Logs: `%USERPROFILE%\ReelStudio\logs\` (`ReelStudio.log`, `ReelStudio-errors.log`,
+  `ReelStudio-install.log`).
+- `start.ps1` sets `REEL_PYTHON=.venv\Scripts\python.exe` and `REEL_TTS_PYTHON=.venv-tts\Scripts\python.exe`
+  unless they are set already, and removes `ANTHROPIC_API_KEY` for the server.
+- Test switches for `install.ps1`: `-Root <folder>`, `-SkipWinget`, `-ClaudeConfig <file>`,
+  `-NoShortcuts`, `-NoLogin`. `get.ps1` takes the same plus `-Source <git url or repo path>` and
+  `-NoInstall`. Run from another folder, `install.ps1` first copies itself into `-Root`.

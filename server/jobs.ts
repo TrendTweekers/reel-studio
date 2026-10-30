@@ -2,6 +2,7 @@
 // queue runs the heavy jobs (cut-out, cover frames, cover stills, render), also one at a time, so
 // 2 or 3 videos dropped in a row do not make the Mac swap.
 import type { ChildProcess } from 'node:child_process';
+import { killTree } from './platform';
 
 export type JobKind = 'analyse' | 'cutout' | 'covers' | 'cover-stills' | 'thumbnail' | 'render';
 export type Job = { slug: string; kind: JobKind; run: () => Promise<void>; onPosition?: (position: number) => void };
@@ -68,17 +69,6 @@ export const track = <T extends ChildProcess>(c: T): T => {
   return c;
 };
 export const killAll = (signal: NodeJS.Signals = 'SIGTERM') => {
-  for (const c of children) {
-    try {
-      // Tools run in their own process group (detached), so their ffmpeg children stop too.
-      if (c.pid) process.kill(-c.pid, signal);
-      else c.kill(signal);
-    } catch {
-      try {
-        c.kill(signal);
-      } catch {
-        /* already gone */
-      }
-    }
-  }
+  // Tools run in their own process group (Windows: taskkill /t), so their ffmpeg children stop too.
+  for (const c of children) killTree(c, signal);
 };

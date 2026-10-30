@@ -114,9 +114,14 @@ const contactSheet = async (video: string, duration: number, props: ReelProps, o
   const times = picked.sort((a, b) => a - b).map((t) => Math.round(t * 10) / 10);
   const tmp = fs.mkdtempSync(path.join(path.dirname(outFile), '.sheet-'));
   try {
-    for (const [i, t] of times.entries())
-      await run('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', video, '-frames:v', '1', '-vf', wide ? 'scale=480:270' : 'scale=360:640', path.join(tmp, `${String(i).padStart(2, '0')}.jpg`)]);
-    const r = await run('ffmpeg', ['-v', 'error', '-y', '-pattern_type', 'glob', '-i', path.join(tmp, '*.jpg'), '-vf', 'tile=4x3:padding=6:color=white', '-frames:v', '1', '-q:v', '3', outFile]);
+    // Numbered without gaps and read as %02d: Windows ffmpeg builds have no -pattern_type glob.
+    let n = 0;
+    for (const t of times) {
+      const jpg = path.join(tmp, `${String(n).padStart(2, '0')}.jpg`);
+      await run('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', video, '-frames:v', '1', '-vf', wide ? 'scale=480:270' : 'scale=360:640', jpg]);
+      if (fs.existsSync(jpg)) n++;
+    }
+    const r = await run('ffmpeg', ['-v', 'error', '-y', '-start_number', '0', '-i', path.join(tmp, '%02d.jpg'), '-vf', 'tile=4x3:padding=6:color=white', '-frames:v', '1', '-q:v', '3', outFile]);
     if (r.code !== 0) throw new Error(`contact sheet failed: ${r.err.slice(-200)}`);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

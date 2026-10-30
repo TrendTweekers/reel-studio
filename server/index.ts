@@ -4,6 +4,7 @@ import express from 'express';
 import multer from 'multer';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrandSettings, CoverCandidate, CoverProps, Edit, ErrorCode, FaceSample, ProjectMeta, ProjectStatus, ProjectStep, ReelProps, RenderVariant, Word } from '../src/shared/types';
@@ -24,6 +25,7 @@ import { mountLooks } from './looks';
 import { autoTitle, isGenericTitle, titleFromWords } from './title';
 import { findRetakes, longFirstEdit, subtract } from './longedit';
 import { herReels } from './reels';
+import { CAN_REVEAL, IS_WIN, addWinFfmpegToPath, claudeCommand, killTree, linkFile, revealFile, runCmdSync, spawnCmd, spawnGroup, venvPython } from './platform';
 import { storyFirstEdit } from './storyedit';
 import { isLong, longSize } from '../src/shared/long';
 import type { ThumbnailProps } from '../src/shared/types';
@@ -38,8 +40,9 @@ const SETTINGS = path.join(ROOT, 'settings.json');
 const INCOMING = path.join(ROOT, '.incoming'); // temp folder for board/music uploads (same disk, so rename works)
 const PORT = Number(process.env.PORT ?? 8787);
 const ORIGIN = `http://localhost:${PORT}`;
-const PYTHON = process.env.REEL_PYTHON ?? path.join(ROOT, '.venv', 'bin', 'python');
-if (process.env.FFMPEG_BIN_DIR) process.env.PATH = `${process.env.FFMPEG_BIN_DIR}${path.delimiter}${process.env.PATH}`;
+const PYTHON = process.env.REEL_PYTHON ?? venvPython(path.join(ROOT, '.venv'));
+if (IS_WIN) addWinFfmpegToPath();
+else if (process.env.FFMPEG_BIN_DIR) process.env.PATH = `${process.env.FFMPEG_BIN_DIR}${path.delimiter}${process.env.PATH}`;
 
 for (const d of [PROJECTS, BOARD, MUSIC, STYLES, INCOMING]) fs.mkdirSync(d, { recursive: true });
 
@@ -130,8 +133,8 @@ const plainOf = (e: unknown, fallback: ErrorCode = 'unknown') => {
 const runTool = (slug: string, tool: string, step: Step, args: string[] = [], python = PYTHON) =>
   new Promise<void>((resolve, reject) => {
     setStatus(slug, { step, progress: 0 });
-    // Own process group, so stopping the server also stops the ffmpeg the tool started.
-    const p = track(spawn(python, [path.join(ROOT, 'tools', `${tool}.py`), dir(slug), ...args], { cwd: ROOT, env: process.env, detached: true }));
+    // Own process group (Windows: a tree for taskkill), so stopping the server also stops the tool's ffmpeg.
+    const p = track(spawnGroup(python, [path.join(ROOT, 'tools', `${tool}.py`), dir(slug), ...args], { cwd: ROOT, env: process.env }));
     let err = '';
     let lastError = '';
     let buf = '';
@@ -589,7 +592,7 @@ const clipStatus = (slug: string): Status | null => {
       fs.rmSync(cut, { force: true });
       linkThere = false;
     }
-    if (!linkThere && fs.existsSync(file(m.parent, 'cutout.webm'))) fs.symlinkSync(path.join('..', m.parent, 'cutout.webm'), cut);
+    if (!linkThere && fs.existsSync(file(m.parent, 'cutout.webm'))) linkFile(path.join('..', m.parent, 'cutout.webm'), cut);
   } catch (e) {
     console.error(`clip cutout link ${slug}:`, (e as Error).message);
   }
@@ -890,7 +893,7 @@ app.post('/api/projects/:slug/reanalyse', (req, res) => {
 const makeClip = (parent: string, parentEdit: Edit, start: number, end: number, title: string) => {
   const slug = slugify(title);
   fs.mkdirSync(dir(slug), { recursive: true });
-  for (const f of ['proxy.mp4', 'cutout.webm']) if (fs.existsSync(file(parent, f))) fs.symlinkSync(path.join('..', parent, f), file(slug, f));
+  for (const f of ['proxy.mp4', 'cutout.webm']) if (fs.existsSync(file(parent, f))) linkFile(path.join('..', parent, f), file(slug, f));
   for (const f of ['words.json', 'faces.json', 'transcript.json']) if (fs.existsSync(file(parent, f))) fs.copyFileSync(file(parent, f), file(slug, f));
   writeJson(file(slug, 'meta.json'), { title, createdAt: new Date().toISOString(), parent, range: { start, end } });
   const words = readJson<Word[]>(file(parent, 'words.json'), []).filter((w) => w.start >= start - 0.05 && w.end <= end + 0.05);
@@ -1196,12 +1199,11 @@ app.post('/api/projects/:slug/reveal', (req, res) => {
     res.status(404).json({ ok: false, error: 'No such file' });
     return;
   }
-  if (process.platform !== 'darwin') {
-    res.json({ ok: false, reason: 'Show in Finder works only on a Mac' });
+  if (!CAN_REVEAL) {
+    res.json({ ok: false, reason: 'Showing the file works only on a Mac or Windows' });
     return;
   }
-  const p = track(spawn('open', ['-R', abs], { stdio: 'ignore' }));
-  p.on('error', () => {});
+  void revealFile(abs);
   res.json({ ok: true });
 });
 
@@ -1281,8 +1283,8 @@ type AskCode = 'not_logged_in' | 'claude_missing' | 'stopped' | 'ask_failed';
 type ChatMsg = { role: 'user' | 'claude' | 'error'; text: string; at: string; code?: AskCode };
 type AskJob = { child: ReturnType<typeof spawn>; activity: string; stopped?: boolean };
 const asks = new Map<string, AskJob>();
-const HOME_CLAUDE = path.join(process.env.HOME ?? '', '.local', 'bin', 'claude');
-const CLAUDE_BIN = process.env.CLAUDE_BIN ?? (fs.existsSync(HOME_CLAUDE) ? HOME_CLAUDE : 'claude');
+// CLAUDE_BIN, ~/.local/bin/claude (Windows: claude on PATH first; an npm claude.cmd is resolved to what it runs).
+const CLAUDE = claudeCommand();
 // What a page turn may do: read and edit reel files, run the word/check scripts, talk to this
 // server. No other npm scripts, no shell, no code changes (those belong in "Ask Claude.command").
 const HOSTS = [`localhost:${PORT}`, `http://localhost:${PORT}`];
@@ -1303,6 +1305,7 @@ const ALLOWED_TOOLS = [
   'Bash(ls *)',
   'Bash(open projects/*)',
   'Bash(.venv/bin/python .claude/skills/ig-*)',
+  ...(IS_WIN ? ['Bash(.venv/Scripts/python .claude/skills/ig-*)', 'Bash(.venv/Scripts/python.exe .claude/skills/ig-*)'] : []),
 ];
 // Edit rules cover every file-changing tool; Write is listed as well to be explicit.
 const PROTECTED = ['package.json', 'package-lock.json', '*.command', 'server/**', 'src/**', 'tools/**', 'web/**', 'scripts/**', 'install.sh', '.claude/settings.json', '.claude/settings.local.json'];
@@ -1404,11 +1407,11 @@ app.put('/api/settings/brand', (req, res) => {
 app.get('/api/settings/claude', (_req, res) => {
   let version: string | null = null;
   try {
-    version = execFileSync(CLAUDE_BIN, ['--version'], { encoding: 'utf8', timeout: 15_000 }).trim().split('\n')[0].replace(/\s*\(.*\)\s*$/, '') || null;
+    version = runCmdSync(CLAUDE, ['--version'], 15_000).trim().split('\n')[0].replace(/\s*\(.*\)\s*$/, '') || null;
   } catch {
     version = null;
   }
-  const home = process.env.HOME ?? '';
+  const home = os.homedir();
   const creds = [path.join(home, '.claude', '.credentials.json'), path.join(home, '.claude.json')].some((p) => fs.existsSync(p));
   res.json({ installed: version !== null, version, loggedIn: version === null ? null : creds ? true : null });
 });
@@ -1465,7 +1468,7 @@ app.post('/api/projects/:slug/check', async (req, res) => {
 const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried?: boolean }) => {
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY; // always her subscription, never API billing
-  const child = track(spawn(CLAUDE_BIN, askArgs(slug, prompt, opts.resume), { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] }));
+  const child = track(spawnCmd(CLAUDE, askArgs(slug, prompt, opts.resume), { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] }));
   const job: AskJob = { child, activity: 'Thinking' };
   asks.set(slug, job);
   let buf = '';
@@ -1563,7 +1566,7 @@ app.post('/api/projects/:slug/ask/stop', (req, res) => {
   const job = asks.get(req.params.slug);
   if (job) {
     job.stopped = true;
-    job.child.kill('SIGTERM');
+    killTree(job.child);
   }
   res.json({ ok: true });
 });
@@ -1573,7 +1576,7 @@ app.post('/api/projects/:slug/ask/stop', (req, res) => {
 // Claude writes the script (her subscription, like the Ask box). The voice is her own recording or
 // the free computer voice (tools/tts.py in its own .venv-tts, Chatterbox, MIT). Then the normal
 // analysis runs with normalize --story, and Claude plans the scenes once.
-const TTS_PYTHON = process.env.REEL_TTS_PYTHON ?? path.join(ROOT, '.venv-tts', 'bin', 'python');
+const TTS_PYTHON = process.env.REEL_TTS_PYTHON ?? venvPython(path.join(ROOT, '.venv-tts'));
 const VOICE_DIR = path.join(ROOT, 'voice'); // her voice sample + the last preview line
 const SCRIPT_LANGS = new Set(['pl', 'en']);
 const readText = (p: string) => {
@@ -1584,9 +1587,10 @@ const readText = (p: string) => {
   }
 };
 const voiceSample = () => (fs.existsSync(path.join(VOICE_DIR, 'sample.wav')) ? path.join(VOICE_DIR, 'sample.wav') : null);
-// The python that creates .venv-tts: Homebrew's 3.12 on her Mac (as install.sh uses), else python3.
+// The python that creates .venv-tts: Homebrew's 3.12 on her Mac (as install.sh uses), else python3
+// (Windows: python; tts_setup.py looks for a 3.12 itself).
 const SYS_PYTHON =
-  process.env.REEL_SYS_PYTHON ?? ['/opt/homebrew/bin/python3.12', '/usr/local/bin/python3.12'].find((p) => fs.existsSync(p)) ?? 'python3';
+  process.env.REEL_SYS_PYTHON ?? ['/opt/homebrew/bin/python3.12', '/usr/local/bin/python3.12'].find((p) => fs.existsSync(p)) ?? (IS_WIN ? 'python' : 'python3');
 
 // The voice model needs about 4.7 GB of RAM: one voice job at a time, and never while a video renders.
 let ttsChain: Promise<unknown> = Promise.resolve();
@@ -1627,7 +1631,7 @@ const ttsSetup: { installing: boolean; progress: number; error?: string } = { in
 const startTtsSetup = () => {
   if (ttsSetup.installing) return;
   Object.assign(ttsSetup, { installing: true, progress: 0, error: undefined });
-  const p = track(spawn(SYS_PYTHON, [path.join(ROOT, 'tools', 'tts_setup.py')], { cwd: ROOT, env: process.env, detached: true }));
+  const p = track(spawnGroup(SYS_PYTHON, [path.join(ROOT, 'tools', 'tts_setup.py')], { cwd: ROOT, env: process.env }));
   let buf = '';
   let err = '';
   let lastError = '';
@@ -1664,10 +1668,10 @@ const claudeOnce = (prompt: string, timeoutMs = 150_000) =>
   new Promise<string>((resolve, reject) => {
     const env = { ...process.env };
     delete env.ANTHROPIC_API_KEY; // always her subscription, never API billing
-    const p = track(spawn(CLAUDE_BIN, ['-p', prompt, '--output-format', 'json', '--max-turns', '1', '--disallowedTools', 'Bash', 'Edit', 'Write', 'Read', 'WebFetch', 'WebSearch', 'Task'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] }));
+    const p = track(spawnCmd(CLAUDE, ['-p', prompt, '--output-format', 'json', '--max-turns', '1', '--disallowedTools', 'Bash', 'Edit', 'Write', 'Read', 'WebFetch', 'WebSearch', 'Task'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] }));
     let out = '';
     let err = '';
-    const timer = setTimeout(() => p.kill('SIGTERM'), timeoutMs);
+    const timer = setTimeout(() => killTree(p), timeoutMs);
     p.stdout?.on('data', (d: Buffer) => (out += d.toString()));
     p.stderr?.on('data', (d: Buffer) => (err = (err + d.toString()).slice(-2000)));
     p.on('error', (e) => {
@@ -1803,7 +1807,7 @@ app.post('/api/story/voice/preview', async (req, res) => {
       const keep = (d: Buffer) => (err = (err + d.toString()).slice(-1500));
       p.stdout.on('data', keep);
       p.stderr.on('data', keep);
-      const timer = setTimeout(() => p.kill('SIGTERM'), 5 * 60_000);
+      const timer = setTimeout(() => killTree(p), 5 * 60_000);
       p.on('error', (e) => {
         clearTimeout(timer);
         reject(e);
@@ -2009,4 +2013,5 @@ const shutdown = (signal: NodeJS.Signals) => {
     process.exit(0);
   }, 1500);
 };
-for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(sig, () => shutdown(sig));
+// Windows: Ctrl+C is SIGINT, closing the window is SIGHUP, Ctrl+Break is SIGBREAK (SIGTERM never comes).
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP', ...(IS_WIN ? (['SIGBREAK'] as const) : [])] as const) process.on(sig, () => shutdown(sig));

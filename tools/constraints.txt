@@ -1,4 +1,4 @@
-# Tested package set (from the working dev venv). Resolves on macOS arm64, Python 3.12.
+# Tested package set (from the working dev venv). Resolves on macOS arm64 (3.12) and Windows x64 (3.11; pip adds colorama there).
 # Use: pip install -r tools/requirements.txt -c tools/constraints.txt
 absl-py==2.5.1
 annotated-doc==0.0.5

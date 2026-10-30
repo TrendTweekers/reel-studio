@@ -1,4 +1,4 @@
-# Python 3.12. Wheels exist for macOS arm64 (mediapipe is universal2) and Linux x86_64.
+# Python 3.11 or 3.12. Wheels exist for macOS arm64 (mediapipe is universal2), Linux x86_64 and Windows x64 (3.11 tested).
 numpy==1.26.4
 mediapipe==0.10.21
 faster-whisper==1.2.1

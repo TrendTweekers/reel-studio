@@ -30,3 +30,9 @@ fx-test/
 # Computer voice (tools/tts_setup.py) and her voice sample
 .venv-tts/
 voice/
+
+# Windows: install and server logs, shortcuts, Explorer junk
+logs/
+*.lnk
+Thumbs.db
+desktop.ini

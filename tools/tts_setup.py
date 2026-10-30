@@ -19,10 +19,10 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import emit, progress, fail, run_tool, ROOT, MODELS_DIR
+from _common import emit, progress, fail, run_tool, ROOT, MODELS_DIR, IS_WIN, venv_python
 
 VENV = os.path.join(ROOT, ".venv-tts")
-VPY = os.path.join(VENV, "bin", "python")
+VPY = venv_python(VENV)
 REQ = os.path.join(ROOT, "tools", "requirements-tts.txt")
 MARK = os.path.join(VENV, ".tts-install-ok")
 TTS_DIR = os.path.join(MODELS_DIR, "tts", "chatterbox")
@@ -62,15 +62,18 @@ def find_python():
         cands.append(os.environ["REEL_TTS_PYTHON"])
     for brew in ("/opt/homebrew/opt/python@3.12/bin/python3.12", "/usr/local/opt/python@3.12/bin/python3.12"):
         cands.append(brew)
+    if IS_WIN:
+        local = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        cands += [os.path.join(local, "Programs", "Python", f"Python31{m}", "python.exe") for m in (2, 1, 0)]
     cands.append(sys.executable)
-    for n in ("python3.12", "python3.11", "python3.10", "python3"):
+    for n in ("python3.12", "python3.11", "python3.10", "python3", "python"):
         p = shutil.which(n)
         if p:
             cands.append(p)
     for c in cands:
         if c and os.path.exists(c) and ok_python(c):
             return c
-    fail("No Python 3.10 to 3.12 found. On a Mac run: brew install python@3.12")
+    fail("No Python 3.10 to 3.12 found. On a Mac run: brew install python@3.12; on Windows: winget install Python.Python.3.12")
 
 
 def req_hash():

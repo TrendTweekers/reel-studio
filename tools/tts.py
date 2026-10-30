@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""tts.py: computer voice (Chatterbox Multilingual V3, offline, MIT). Run with .venv-tts/bin/python.
+"""tts.py: computer voice (Chatterbox Multilingual V3, offline, MIT). Run with .venv-tts/bin/python
+(Windows: .venv-tts\\Scripts\\python.exe).
 
   tts.py --check
       {"ready":true|false,"reason":"..."} fast, no model load (works with any Python 3).
@@ -26,10 +27,10 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import emit, progress, fail, run_tool, ffmpeg, MODELS_DIR, ROOT, perf_cores
+from _common import emit, progress, fail, run_tool, ffmpeg, MODELS_DIR, ROOT, perf_cores, venv_python
 
 TTS_DIR = os.path.join(MODELS_DIR, "tts", "chatterbox")
-VENV_PY = os.path.join(ROOT, ".venv-tts", "bin", "python")
+VENV_PY = venv_python(os.path.join(ROOT, ".venv-tts"))
 INSTALL_MARK = os.path.join(ROOT, ".venv-tts", ".tts-install-ok")
 T3_V3 = "t3_mtl23ls_v3.safetensors"
 WEIGHTS = ["ve.pt", T3_V3, "s3gen.pt", "grapheme_mtl_merged_expanded_v1.json", "conds.pt", "Cangjie5_TC.json"]

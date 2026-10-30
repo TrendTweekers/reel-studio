@@ -30,6 +30,8 @@ description: >-
 
 One tool lives in this folder and it runs:
 
+On Windows the python is `.venv/Scripts/python` instead of `.venv/bin/python`.
+
 ```bash
 .venv/bin/python .claude/skills/ig-caption/caption.py caption.txt
 .venv/bin/python .claude/skills/ig-caption/caption.py caption.txt --keywords "client proposals,agency pricing"

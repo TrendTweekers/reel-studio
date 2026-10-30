@@ -12,11 +12,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { checkEdit, type Problem } from '../src/shared/check';
 import { IG_PROMPTS } from '../src/shared/igPrompts';
 import { checkVideo } from '../server/videocheck';
+import { IS_MAC, IS_WIN, addWinFfmpegToPath, openTarget, revealFile, venvPython } from '../server/platform';
 import { chapterList, formatTime, fullDescription, isLong, outputChapters } from '../src/shared/long';
 import { isStory } from '../src/shared/story';
 import { outputDuration, outputToSource, outputWords, sourceToOutput, totalFrames } from '../src/shared/time';
@@ -54,11 +55,12 @@ process.chdir(ROOT);
 const BRAND = path.join(ROOT, 'brand.md');
 const PORT = Number(process.env.PORT ?? 8787);
 const ORIGIN = `http://localhost:${PORT}`;
-const IS_MAC = process.platform === 'darwin';
 // Claude Desktop starts us with a short PATH. Homebrew (ffmpeg) lives here on a Mac.
-for (const p of [process.env.FFMPEG_BIN_DIR, '/usr/local/bin', '/opt/homebrew/bin'])
-  if (p && fs.existsSync(p) && !(process.env.PATH ?? '').split(path.delimiter).includes(p))
-    process.env.PATH = `${p}${path.delimiter}${process.env.PATH ?? ''}`;
+if (IS_WIN) addWinFfmpegToPath();
+else
+  for (const p of [process.env.FFMPEG_BIN_DIR, '/usr/local/bin', '/opt/homebrew/bin'])
+    if (p && fs.existsSync(p) && !(process.env.PATH ?? '').split(path.delimiter).includes(p))
+      process.env.PATH = `${p}${path.delimiter}${process.env.PATH ?? ''}`;
 
 const NOT_OPEN = 'Reel Studio is not open. I can open it: call open_reel_studio.';
 class NotOpen extends Error {}
@@ -247,10 +249,25 @@ const run = (cmd: string, args: string[]) =>
   });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const openUrl = async (target: string, app?: string) => {
-  if (!IS_MAC) return false;
-  const r = await run('open', app ? ['-a', app] : [target]);
-  return r.code === 0;
+  if (IS_MAC && app) return (await run('open', ['-a', app])).code === 0;
+  return openTarget(target);
 };
+// Windows has no app bundle to open: start the server ourselves, hidden, logging to logs/ReelStudio.log (same file as win/start.ps1).
+// Through PowerShell Start-Process (ShellExecute), so the server does not inherit our stdio pipes:
+// a plain spawn would keep Claude Desktop's pipe to this connector open after we exit.
+const startServerWin = () => {
+  const q = (x: string) => `'${x.replace(/'/g, "''")}'`; // PowerShell single quotes
+  const loader = pathToFileURL(path.join(ROOT, 'node_modules', 'tsx', 'dist', 'loader.mjs')).href;
+  fs.mkdirSync(path.join(ROOT, 'logs'), { recursive: true });
+  const line = `"${process.execPath}" --import ${loader} "${path.join(ROOT, 'server', 'index.ts')}" >> "${path.join(ROOT, 'logs', 'ReelStudio.log')}" 2>&1`;
+  const ps = `Start-Process -WindowStyle Hidden -WorkingDirectory ${q(ROOT)} -FilePath cmd.exe -ArgumentList ${q(`/d /s /c "${line}"`)}`;
+  const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  p.on('error', () => {});
+};
+
 // A small JPEG (width w) of an image or a video frame, through ffmpeg. Null when ffmpeg is missing.
 const smallJpeg = async (input: string, w: number, seek?: number) => {
   const args = ['-v', 'error', ...(seek !== undefined ? ['-ss', String(Math.max(0, seek))] : []), '-i', input, '-frames:v', '1', '-vf', `scale=${w}:-2`, '-q:v', '4', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'];
@@ -408,26 +425,27 @@ const progress = async (extra: Extra, value: number, message: string) => {
 // ----- open / list -----
 tool(
   'open_reel_studio',
-  'Open the Reel Studio app on her Mac (and wait until it is ready, up to 60 s). With a reel name, also show that reel in the editor page so she can watch your changes live.',
+  'Open the Reel Studio app on her computer (and wait until it is ready, up to 60 s). With a reel name, also show that reel in the editor page so she can watch your changes live.',
   { slug: z.string().optional().describe('Optional reel to show in the editor page.') },
   WRITE,
   async ({ slug }) => {
     let up = await isUp();
     if (!up) {
-      if (!IS_MAC) return 'Reel Studio is not running, and I can only start it on a Mac. Ask her to click "Reel Studio" in the Dock.';
-      await openUrl('', 'Reel Studio');
+      if (!IS_MAC && !IS_WIN) return 'Reel Studio is not running, and I can only start it on a Mac or Windows. Ask her to start Reel Studio.';
+      if (IS_WIN) startServerWin();
+      else await openUrl('', 'Reel Studio');
       for (let i = 0; i < 60 && !up; i++) {
         await sleep(1000);
         up = await isUp();
       }
-      if (!up) return 'I asked Reel Studio to start, but it did not answer within 60 seconds. Ask her to click "Reel Studio" in the Dock (or double-click "Start Reel Studio.command") and wait a moment.';
+      if (!up) return 'I asked Reel Studio to start, but it did not answer within 60 seconds. Ask her to start Reel Studio (Mac: "Reel Studio" in the Dock; Windows: the Reel Studio shortcut) and wait a moment.';
     }
     if (slug) {
       await getProject(slug);
       const ok = await openUrl(`${ORIGIN}/#/p/${slug}`);
       return ok ? `Reel Studio is open and shows the reel "${slug}".` : `Reel Studio is running. The reel page is ${ORIGIN}/#/p/${slug}`;
     }
-    if (IS_MAC) await openUrl(ORIGIN);
+    if (IS_MAC || IS_WIN) await openUrl(ORIGIN);
     return 'Reel Studio is open.';
   },
 );
@@ -1102,7 +1120,7 @@ tool(
 );
 tool(
   'show_in_finder',
-  'Show a finished video (or the covers) in Finder on her Mac. file = a video file name from get_reel, "covers" for the cover folder, or empty for the newest video.',
+  'Show a finished video (or open the covers folder) on her computer, in Finder or File Explorer. file = a video file name from get_reel, "covers" for the cover folder, or empty for the newest video.',
   { slug: slugArg, file: z.string().optional() },
   WRITE,
   async ({ slug, file }) => {
@@ -1111,7 +1129,7 @@ tool(
     if (!name) return 'There is no finished video yet. Call make_video first.';
     try {
       await api('POST', `/api/projects/${enc(slug)}/reveal`, { file: name });
-      return 'Shown in Finder.';
+      return 'Shown in the file window.';
     } catch (e) {
       if ((e as ApiError).status !== 404 || (e as ApiError).body?.error === 'No such project') throw e;
     }
@@ -1119,7 +1137,7 @@ tool(
     if (!/^[^/\\]+$/.test(name) || name.startsWith('.')) throw new UserError('Bad file name.');
     const abs = name === 'covers' ? path.join(ROOT, 'projects', slug, 'covers') : path.join(ROOT, 'projects', slug, 'out', name);
     if (!fs.existsSync(abs)) throw new UserError(`There is no file "${name}". get_reel lists the finished videos.`);
-    if (IS_MAC && (await run('open', ['-R', abs])).code === 0) return 'Shown in Finder.';
+    if ((IS_MAC || IS_WIN) && (await revealFile(abs))) return 'Shown in the file window.';
     return `The file is here: ${abs}`;
   },
 );
@@ -1222,8 +1240,8 @@ const igGuides = Object.entries(IG_SKILLS).map(([k, v]) => `${k}: ${v}`).join('\
 
 const runPython = (script: string, args: string[], input: string) =>
   new Promise<string>((resolve, reject) => {
-    const venv = path.join(ROOT, '.venv', 'bin', 'python');
-    const py = fs.existsSync(venv) ? venv : 'python3';
+    const venv = venvPython(path.join(ROOT, '.venv'));
+    const py = fs.existsSync(venv) ? venv : IS_WIN ? 'python' : 'python3';
     const p = spawn(py, [path.join(ROOT, '.claude', 'skills', script), ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';

@@ -35,6 +35,8 @@ looks. Run it monthly, not daily. Formulas last a season.
 
 One tool lives in this folder and it runs:
 
+On Windows the python is `.venv/Scripts/python` instead of `.venv/bin/python`.
+
 ```bash
 .venv/bin/python .claude/skills/ig-viral/swipe.py captured.tsv --out instagram/swipe.md
 ```

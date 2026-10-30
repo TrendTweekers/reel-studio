@@ -32,6 +32,8 @@ description: >-
 Two tools live in this folder and they both actually run. Use them. Do not
 eyeball this.
 
+On Windows the python is `.venv/Scripts/python` instead of `.venv/bin/python`.
+
 ```bash
 .venv/bin/python .claude/skills/ig-human/humanize.py draft.txt --report        # clean it, show what changed
 .venv/bin/python .claude/skills/ig-human/detect.py draft.txt                    # score it, five checks

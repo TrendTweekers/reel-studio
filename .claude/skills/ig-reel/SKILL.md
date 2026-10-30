@@ -34,6 +34,8 @@ Turns one raw idea into a Reel that somebody finishes.
 Two tools live in this folder and they both actually run. Use them. Do not
 eyeball the hook and do not guess at the length.
 
+On Windows the python is `.venv/Scripts/python` instead of `.venv/bin/python`.
+
 ```bash
 .venv/bin/python .claude/skills/ig-reel/hookscore.py hooks.txt              # rank your hook options
 .venv/bin/python .claude/skills/ig-reel/hookscore.py --hook "one line"      # score a single one

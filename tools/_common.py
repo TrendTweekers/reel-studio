@@ -1,4 +1,4 @@
-"""Shared helpers for the Reel Studio analysis tools. Cross-platform (macOS arm64 + Linux)."""
+"""Shared helpers for the Reel Studio analysis tools. Cross-platform (macOS arm64, Linux, Windows)."""
 import glob
 import json
 import os
@@ -9,6 +9,76 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(ROOT, "models")
+IS_WIN = sys.platform == "win32"
+
+
+def venv_python(venv_dir):
+    """The python inside a venv folder (.venv, .venv-tts)."""
+    return os.path.join(venv_dir, "Scripts", "python.exe") if IS_WIN else os.path.join(venv_dir, "bin", "python")
+
+
+def _windows_guard():
+    """Windows has no process groups. Put this tool in a job object that kills every child
+    (ffmpeg) when the tool ends, and end the tool when the server that started it is gone,
+    so a hard-killed server never leaves ffmpeg writing into a reel."""
+    import ctypes
+    import threading
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.GetCurrentProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+
+    class BASIC(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
+
+    class IO(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_uint64) for n in ("r", "w", "o", "rt", "wt", "ot")]
+
+    class EXT(ctypes.Structure):
+        _fields_ = [("Basic", BASIC), ("Io", IO), ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    job = k32.CreateJobObjectW(None, None)
+    if job:
+        info = EXT()
+        info.Basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):  # Extended limits
+            # Fails harmlessly when we already are in a job that forbids nesting; taskkill /t still works.
+            k32.AssignProcessToJobObject(job, k32.GetCurrentProcess())
+    # The server sets REEL_PARENT_PID: our direct parent is often the venv's python.exe launcher,
+    # which outlives a killed server.
+    try:
+        ppid = int(os.environ.get("REEL_PARENT_PID") or os.getppid())
+    except ValueError:
+        ppid = os.getppid()
+    parent = k32.OpenProcess(0x00100000, False, ppid)  # SYNCHRONIZE
+    if parent:
+        def watch():
+            k32.WaitForSingleObject(parent, 0xFFFFFFFF)
+            os._exit(3)
+        threading.Thread(target=watch, daemon=True).start()
+
+
+if IS_WIN:
+    # Pipes are cp1252 on Windows; the server reads UTF-8 JSON lines (Polish words).
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+    if not os.environ.get("REEL_NO_JOB_GUARD"):
+        try:
+            _windows_guard()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def emit(**kw):
@@ -34,6 +104,12 @@ def run_tool(main):
         fail(f"{type(e).__name__}: {e}")
 
 
+def _win_ffmpeg_dirs():
+    local = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    pf = os.environ.get("ProgramFiles") or r"C:\Program Files"
+    return [os.path.join(local, "Microsoft", "WinGet", "Links"), os.path.join(pf, "ffmpeg", "bin"), r"C:\ffmpeg\bin"]
+
+
 def _bin(name, env):
     if os.environ.get(env):
         return os.environ[env]
@@ -44,6 +120,8 @@ def _bin(name, env):
             if os.path.exists(p):
                 return p
     p = shutil.which(name)
+    if not p and IS_WIN:
+        p = next((os.path.join(x, name + ".exe") for x in _win_ffmpeg_dirs() if os.path.isfile(os.path.join(x, name + ".exe"))), None)
     if not p:
         fail(f"{name} not found. Put it on PATH or set {env} / FFMPEG_BIN_DIR.")
     return p

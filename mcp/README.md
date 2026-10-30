@@ -29,6 +29,28 @@ else. The server also changes into the app folder when it starts. An optional th
 sets another config path (used by the tests). Claude Desktop must be quit and opened again to
 load the connector.
 
+### Windows
+
+`install.ps1` calls the same script with the config path given explicitly (the default in
+`register.mjs` is the Mac path):
+
+    node.exe mcp\register.mjs "C:\Program Files\nodejs\node.exe" "C:\Users\<user>\ReelStudio" "%APPDATA%\Claude\claude_desktop_config.json"
+
+The result:
+
+    "reel-studio": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["--import", "file:///C:/Users/<user>/ReelStudio/node_modules/tsx/dist/loader.mjs", "C:\\Users\\<user>\\ReelStudio\\mcp\\server.ts"],
+      "cwd": "C:\\Users\\<user>\\ReelStudio"
+    }
+
+The Microsoft Store (MSIX) build of Claude Desktop reads a redirected copy of `%APPDATA%`, so
+`install.ps1` also writes `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude_desktop_config.json`
+when such a package folder exists. When Claude Desktop is not installed yet, the file is written
+anyway and the connector shows up once it is installed. Quit Claude Desktop fully (also the tray
+icon near the clock) and open it again to load the connector. The app itself is started with
+`win\start.ps1` (the Desktop and Start menu shortcut), see SETUP.md.
+
 ## Tools
 
 | Area | Tools |
