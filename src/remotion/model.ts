@@ -518,7 +518,8 @@ export const buildModel = (props: ReelProps): Model => {
     const middle = HEIGHT * 0.52 - h / 2;
     const above = head.y - 36 - h;
     const below = head.y + head.h + 36;
-    const pos = edit.style.subtitlePosition;
+    // A story video has no head to avoid, and its scenes fill the middle: captions stay low.
+    const pos = edit.format === 'story' ? 'lower' : edit.style.subtitlePosition;
     const base = pos === 'lower' ? [lower, below, middle] : pos === 'middle' ? [middle, below, lower] : [above, below, lower];
     const extra = obstacles.flatMap((o) => [o.y + o.h + 22, o.y - 22 - h]);
     const ok = (t: number) => {

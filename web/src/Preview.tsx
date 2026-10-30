@@ -6,6 +6,7 @@ import type { Edit, LongSettings, ReelProps } from '../../src/shared/types';
 import { FPS, HEIGHT, WIDTH } from '../../src/shared/types';
 import { outputFrames, totalFrames } from '../../src/shared/time';
 import { defaultLong, formatTime, isLong, longSize, outputChapters } from '../../src/shared/long';
+import { isStory } from '../../src/shared/story';
 import type { FileItem } from './api';
 import type { Change } from './Editor';
 import { useT } from './i18n';
@@ -31,6 +32,7 @@ export function Preview({
   const { t } = useT();
   // A long YouTube video: its own composition and size, no end card, chapter marks on the scrubber.
   const long = isLong(edit);
+  const story = isStory(edit); // no face: no zoom jumps or glow above the head
   const size = long ? longSize(edit) : { width: WIDTH, height: HEIGHT, wide: false };
   const total = long ? outputFrames(edit.segments) : totalFrames(edit);
   const chapters = long ? outputChapters(edit) : [];
@@ -181,8 +183,8 @@ export function Preview({
         <div className="toggles">
           <Toggle on={edit.sound.effects} label={t('togSfx')} set={(v) => change((e) => ({ ...e, sound: { ...e.sound, effects: v } }))} />
           <Toggle on={musicOn} label={t('togMusic')} set={toggleMusic} />
-          <Toggle on={edit.toggles.zoomJumps} label={t('togZoom')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, zoomJumps: v } }))} />
-          <Toggle on={edit.toggles.glowAboveHead} label={t('togGlow')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, glowAboveHead: v } }))} />
+          {!story && <Toggle on={edit.toggles.zoomJumps} label={t('togZoom')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, zoomJumps: v } }))} />}
+          {!story && <Toggle on={edit.toggles.glowAboveHead} label={t('togGlow')} set={(v) => change((e) => ({ ...e, toggles: { ...e.toggles, glowAboveHead: v } }))} />}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 # Reel Studio connector (MCP) for the Claude Desktop chat
 
-Lets Paulina edit her reels from her normal Claude Desktop chat (no Claude Code needed).
+Lets the user edit their reels from their normal Claude Desktop chat (no Claude Code needed).
 `mcp/server.ts` is a local stdio MCP server. It talks only to the app's JSON API on
 http://localhost:8787. It reads `brand.md` and appends to it (remember_preference); it writes
 nothing else directly. It has no delete tools and never posts anywhere.
@@ -41,7 +41,7 @@ load the connector.
 | See | show_reel_frame: a 540x960 JPEG of the current edit at an output second |
 | Memory | get_preferences, remember_preference (appends one line, max 200 chars, to brand.md) |
 
-Edits use GET, then `PUT /edit` with `x-base-version`. On a 409 (she saved on the page in
+Edits use GET, then `PUT /edit` with `x-base-version`. On a 409 (the user saved on the page in
 between) the tool reads the edit again and makes the change once more. After each change the
 tool returns the check result. Cut and keep use the same segment math as the editor page
 (`web/src/editState.ts`).

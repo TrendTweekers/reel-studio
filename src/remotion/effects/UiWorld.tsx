@@ -1,4 +1,4 @@
-// App UI floating around her: an iOS-style notification ("Paulina • teraz" + e.text), a search bar
+// App UI floating around her: an iOS-style notification ("<her first name> • teraz" + e.text), a search bar
 // that types e.text letter by letter, chat / DM bubbles (one per e.items line; "Name: message" shows
 // the name), and a like counter that counts up. 2-4 glassy cream cards pop in one by one and float
 // gently. They are laid out once for the whole effect: inside the safe area, off her head, clear of
@@ -168,7 +168,7 @@ export const UiWorld: React.FC<{ e: TimedEffect }> = ({ e }) => {
           </div>
           <div style={{ flex: 1, minWidth: 0, fontFamily: subFont }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 30 }}>
-              <span style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>Paulina</span>
+              <span style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>{(props.brand?.name ?? '').split(' ')[0] || 'Reel Studio'}</span>
               <span style={{ opacity: 0.45, fontSize: 24 }}>{pl ? 'teraz' : 'now'}</span>
             </div>
             <div style={{ fontSize: 36, lineHeight: 1.2, marginTop: 4, opacity: 0.88, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>

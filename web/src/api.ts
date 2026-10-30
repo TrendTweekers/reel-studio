@@ -1,9 +1,9 @@
-import type { Edit, Effect, FaceSample, ReelClip, Word } from '../../src/shared/types';
+import type { BrandSettings, Edit, Effect, FaceSample, ReelClip, Word } from '../../src/shared/types';
 import type { EditingStyle } from '../../src/shared/styles';
 
 export type StyleItem = EditingStyle & { own: boolean };
 
-export type Step = 'queued' | 'uploading' | 'normalize' | 'transcribe' | 'faces' | 'autoedit' | 'cutout' | 'covers' | 'ready' | 'error';
+export type Step = 'queued' | 'uploading' | 'voice' | 'normalize' | 'transcribe' | 'faces' | 'autoedit' | 'cutout' | 'covers' | 'ready' | 'error';
 export type AskMessage = { role: 'user' | 'claude' | 'error'; text: string; at: string; code?: string };
 export type AskState = { running: boolean; activity: string | null; messages: AskMessage[] };
 export type CoverCandidateItem = { t: number; file: string; score: number; url: string };
@@ -16,8 +16,9 @@ export type CoversState = {
 };
 export type Status = { step: Step; progress: number; message?: string; code?: string; position?: number };
 
-export type Format = 'reel' | 'long';
-export type ProjectSummary = { slug: string; title: string; createdAt: string; status: Status; parent?: string | null; format?: Format };
+export type Format = 'reel' | 'long' | 'story';
+// mode: how a video from text was made ('product' = about an app, website or product). Older servers leave it out.
+export type ProjectSummary = { slug: string; title: string; createdAt: string; status: Status; parent?: string | null; format?: Format; mode?: StoryMode };
 export type RenderInfo = { file: string; createdAt: string; url: string };
 export type ProjectDetail = {
   slug: string;
@@ -32,6 +33,7 @@ export type ProjectDetail = {
   range?: { start: number; end: number } | null;
   parent?: string | null;
   format?: Format;
+  mode?: StoryMode;
 };
 // The YouTube thumbnail (long videos): covers/thumbnail.jpg, 1280x720.
 export type ThumbnailState = { url: string | null; rendering: boolean; error: string | null };
@@ -150,8 +152,35 @@ export const api = {
   // "My look" page
   lookStill: (slug: string, body: LookStillReq) => req<{ url: string }>('POST', `/api/projects/${enc(slug)}/look-still`, body),
   look: () => req<{ lookDone: boolean; styleId: string | null }>('GET', '/api/look'),
+  // Video from text ("Film z tekstu")
+  storyScript: (topic: string, language: 'pl' | 'en', seconds: StorySeconds, mode: StoryMode = 'creator', product?: ProductInfo) =>
+    req<{ title: string; script: string }>('POST', '/api/story/script', { topic, language, seconds, mode, ...(mode === 'product' && product ? { product } : {}) }),
+  voiceState: () => req<VoiceState>('GET', '/api/story/voice'),
+  voiceInstall: () => req<{ ok: boolean }>('POST', '/api/story/voice/install', {}),
+  voiceSample: (file: File) => {
+    const fd = new FormData();
+    fd.append('audio', file, file.name);
+    return req<{ ok: boolean }>('PUT', '/api/story/voice/sample', fd);
+  },
+  voiceSampleDelete: () => req<{ ok: boolean }>('DELETE', '/api/story/voice/sample'),
+  voicePreview: (text: string, language: 'pl' | 'en', useSample: boolean) => req<{ url: string }>('POST', '/api/story/voice/preview', { text, language, useSample }),
+  // Who uses this copy, the first-start setup, the licence key
+  brand: () => req<BrandSettings>('GET', '/api/settings/brand'),
+  saveBrand: (b: BrandSettings) => req<BrandSettings>('PUT', '/api/settings/brand', b),
+  claude: () => req<ClaudeState>('GET', '/api/settings/claude'),
+  licence: () => req<LicenceState>('GET', '/api/settings/licence'),
+  saveLicence: (key: string) => req<LicenceState>('PUT', '/api/settings/licence', { key }),
   saveLook: (body: LookSaveReq) => req<{ ok: boolean; id: string; style: Edit['style']; toggles: Edit['toggles']; brandLines: string[] }>('POST', '/api/look', body),
 };
+
+export type StorySeconds = 30 | 45 | 60;
+export type StoryMode = 'creator' | 'product';
+// What Claude needs to write about a product. screenshots = board file names.
+export type ProductInfo = { name: string; what: string; audience: string; screenshots: string[] };
+// null = the server could not tell.
+export type ClaudeState = { installed: boolean; version: string | null; loggedIn: boolean | null };
+export type LicenceState = { key: string | null; status: 'none' | 'saved' };
+export type VoiceState = { ready: boolean; installing: boolean; progress: number; error?: string; sample: boolean; sizeGb: number };
 
 export type LookPatch = { style?: Partial<Edit['style']>; hook?: Edit['hook']; toggles?: Partial<Edit['toggles']> };
 export type LookStillReq = { patch: LookPatch; effect?: Omit<Effect, 'id'>; t?: number; moment?: 'hook' | 'caption' | 'effect' | 'mid' };
@@ -190,6 +219,46 @@ export function upload<T>(
       } else {
         if (xhr.status === 502 || xhr.status === 504) report(true);
         const err = new Error(`${xhr.status}`) as Error & { code?: string; serverText?: string };
+        try {
+          const j = JSON.parse(xhr.responseText);
+          err.code = j?.code;
+          err.serverText = j?.error;
+        } catch {
+          /* not JSON */
+        }
+        reject(err);
+      }
+    };
+    xhr.onerror = () => {
+      report(true);
+      reject(new ServerDownError('server down'));
+    };
+    xhr.onabort = () => reject(new Error('aborted'));
+    xhr.send(fd);
+  });
+  return { promise, abort: () => xhr.abort() };
+}
+
+// Multipart form (fields and files) with upload progress. Errors carry code and serverText like upload().
+export function postForm<T>(url: string, fd: FormData, onProgress?: (p: number) => void): { promise: Promise<T>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<T>((resolve, reject) => {
+    xhr.open('POST', url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        report(false);
+        try {
+          resolve((xhr.responseText ? JSON.parse(xhr.responseText) : {}) as T);
+        } catch {
+          resolve({} as T);
+        }
+      } else {
+        if (xhr.status === 502 || xhr.status === 504) report(true);
+        const err = new Error(`${xhr.status}`) as Error & { code?: string; serverText?: string; status?: number };
+        err.status = xhr.status;
         try {
           const j = JSON.parse(xhr.responseText);
           err.code = j?.code;

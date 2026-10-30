@@ -14,6 +14,7 @@ export function CoverPanel({
   step,
   bump,
   currentSource,
+  story,
 }: {
   slug: string;
   edit: Edit;
@@ -21,6 +22,7 @@ export function CoverPanel({
   step: Step | undefined;
   bump: number;
   currentSource: () => number;
+  story?: boolean; // a video from text: no face to find the best frames, she picks the moment
 }) {
   const { t } = useT();
   const [st, setSt] = useState<CoversState | null>(null);
@@ -100,7 +102,7 @@ export function CoverPanel({
   const bust = (u: string) => `${u}${u.includes('?') ? '&' : '?'}v=${stamp}`;
 
   return (
-    <Panel id="cover" title={t('cover')} hint={t('coverHint')}>
+    <Panel id="cover" title={t('cover')} hint={story ? t('coverHintStory') : t('coverHint')}>
       {busyFinding ? (
         <div className="cover-finding">
           <span className="spinner" aria-hidden />
@@ -121,9 +123,11 @@ export function CoverPanel({
       ) : null}
 
       <div className="row gap cover-actions">
-        <button className="btn" onClick={find} disabled={busyFinding}>
-          ✦ {candidates.length ? t('coverFindAgain') : t('coverFind')}
-        </button>
+        {!story && (
+          <button className="btn" onClick={find} disabled={busyFinding}>
+            ✦ {candidates.length ? t('coverFindAgain') : t('coverFind')}
+          </button>
+        )}
         <button className="btn" onClick={() => pick(currentSource())}>
           ◎ {t('coverUseCurrent')}
         </button>

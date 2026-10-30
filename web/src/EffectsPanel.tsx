@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Edit, Effect, EffectPosition, ReelClip, SfxName } from '../../src/shared/types';
-import { LONG_KINDS, REEL_KINDS, SCENE_KINDS, SFX_NAMES } from '../../src/shared/types';
+import { LONG_KINDS, REEL_KINDS, SCENE_KINDS, SFX_NAMES, STORY_SKIP_KINDS } from '../../src/shared/types';
 import { sourceToOutput } from '../../src/shared/time';
 import type { FileItem, SfxItem } from './api';
 import type { Change } from './Editor';
@@ -31,6 +31,7 @@ export function EffectsPanel({
   seekSource,
   sfx,
   long,
+  story,
   reels = [],
 }: {
   edit: Edit;
@@ -44,9 +45,12 @@ export function EffectsPanel({
   sfx: SfxItem[];
   long?: boolean; // a long YouTube video shows only LONG_KINDS and has no sound effects
   reels?: ReelClip[]; // her finished reels, for envelope, folder, polaroid, ...
+  story?: boolean; // a video from text ignores the effects that need a person on camera
 }) {
   const { t } = useT();
-  const list = sortEffects(long ? edit.effects.filter((fx) => LONG_KINDS.includes(fx.kind)) : edit.effects);
+  const list = sortEffects(
+    long ? edit.effects.filter((fx) => LONG_KINDS.includes(fx.kind)) : story ? edit.effects.filter((fx) => !STORY_SKIP_KINDS.includes(fx.kind)) : edit.effects,
+  );
   const boardUrl = (file: string) => board.find((b) => b.file === file)?.url ?? `/board/${encodeURIComponent(file)}`;
 
   const update = (id: string, patch: Partial<Effect>, key?: string) =>
@@ -86,7 +90,7 @@ export function EffectsPanel({
                   ) : null}
                 </span>
               </button>
-              {isSel && <FxDetail long={long} fx={fx} update={update} change={change} board={board} setBoard={setBoard} usedBy={usedBy} edit={edit} sfx={sfx} reels={reels} boardUrl={boardUrl} seekSource={seekSource} onDelete={() => setSelected(null)} />}
+              {isSel && <FxDetail long={long} story={story} fx={fx} update={update} change={change} board={board} setBoard={setBoard} usedBy={usedBy} edit={edit} sfx={sfx} reels={reels} boardUrl={boardUrl} seekSource={seekSource} onDelete={() => setSelected(null)} />}
             </li>
           );
         })}
@@ -108,9 +112,11 @@ function FxDetail({
   seekSource,
   onDelete,
   long,
+  story,
   reels,
 }: {
   long?: boolean;
+  story?: boolean;
   reels: ReelClip[];
   fx: Effect;
   update: (id: string, patch: Partial<Effect>, key?: string) => void;
@@ -196,7 +202,7 @@ function FxDetail({
           <div className="group-label">{t('position')}</div>
           <Chips
             value={fx.position ?? 'auto'}
-            options={POSITIONS.map((p) => ({ value: p, label: t((p === 'above-head' ? 'efpos_above-head' : `pos_${p}`) as StrKey) }))}
+            options={(story ? POSITIONS.filter((p) => p !== 'above-head') : POSITIONS).map((p) => ({ value: p, label: t((p === 'above-head' ? 'efpos_above-head' : `pos_${p}`) as StrKey) }))}
             onChange={(v) => update(fx.id, { position: v })}
           />
         </div>
@@ -269,11 +275,16 @@ function FxDetail({
 // Which of her reels the effect shows. None picked = her newest reels. Without finished reels the
 // effect shows short parts of this video instead.
 function ReelPicker({ fx, reels, update }: { fx: Effect; reels: ReelClip[]; update: (id: string, patch: Partial<Effect>, key?: string) => void }) {
+  return <ReelChoice picked={fx.reels} reels={reels} onChange={(r) => update(fx.id, { reels: r })} />;
+}
+
+// The reel chips, shared with the story "reels" scene. undefined = her newest reels.
+export function ReelChoice({ picked: raw, reels, onChange }: { picked?: string[]; reels: ReelClip[]; onChange: (reels: string[] | undefined) => void }) {
   const { t } = useT();
-  const picked = (fx.reels ?? []).filter((s) => reels.some((r) => r.slug === s));
+  const picked = (raw ?? []).filter((s) => reels.some((r) => r.slug === s));
   const toggle = (slug: string) => {
     const next = picked.includes(slug) ? picked.filter((s) => s !== slug) : [...picked, slug];
-    update(fx.id, { reels: next.length ? next : undefined });
+    onChange(next.length ? next : undefined);
   };
   return (
     <div className="group">
@@ -283,7 +294,7 @@ function ReelPicker({ fx, reels, update }: { fx: Effect; reels: ReelClip[]; upda
       ) : (
         <>
           <div className="chips">
-            <button className={`chip ${picked.length ? '' : 'on'}`} aria-pressed={!picked.length} onClick={() => update(fx.id, { reels: undefined })}>
+            <button className={`chip ${picked.length ? '' : 'on'}`} aria-pressed={!picked.length} onClick={() => onChange(undefined)}>
               {t('reelsNewest')}
             </button>
             {reels.map((r) => (

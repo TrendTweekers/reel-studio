@@ -7,6 +7,8 @@ import { CREAM, INK, isDark } from '../color';
 import { useReel } from '../context';
 import { CLAMP } from '../effects/anim';
 import { Scrim, dropFilterFor } from '../legibility';
+import { isStory } from '../../shared/story';
+import { themeFor } from '../story/kit';
 import { CAPTION_CX, CAPTION_LEAD, CAPTION_MAX_W, captionFontSize, isClingy, type OutWord } from '../model';
 
 // Keep a clingy word ("z", "w", "na"...) on the same line as the next word.
@@ -33,7 +35,10 @@ export const Subtitles: React.FC = () => {
   const local = frame - chunk.from;
   const enter = spring({ frame: local, fps: FPS, config: { damping: 200 }, durationInFrames: 6 });
   const exit = interpolate(frame, [chunk.to - 3, chunk.to], [1, 0], CLAMP);
-  const accentOnVideo = isDark(accentColor) ? CREAM : accentColor;
+  // On a story's plain paper there is no busy video behind the words: paper-coloured type, no scrim.
+  const paper = isStory(props.edit) ? themeFor(props.edit.story?.background, accentColor) : null;
+  const plain = paper?.text ?? '#fff';
+  const accentOnVideo = paper ? paper.line : isDark(accentColor) ? CREAM : accentColor;
   const at = frame + CAPTION_LEAD; // the eye arrives a touch before the voice
 
   const renderWord = (w: OutWord) => {
@@ -44,7 +49,7 @@ export const Subtitles: React.FC = () => {
     const base: React.CSSProperties = { display: 'inline-block', margin: '0 0.13em', whiteSpace: 'pre' };
     let s: React.CSSProperties = base;
     if (style === 'clean') {
-      s = { ...base, color: '#fff', opacity: spoken ? 1 : 0.9 };
+      s = { ...base, color: plain, opacity: spoken ? 1 : 0.9 };
     } else if (style === 'box') {
       s = current
         ? { ...base, color: CREAM, background: INK, borderRadius: 14, padding: '0 0.2em', margin: '0 0.06em' }
@@ -54,7 +59,7 @@ export const Subtitles: React.FC = () => {
       s = {
         ...base,
         color: 'transparent',
-        backgroundImage: `linear-gradient(90deg, ${accentOnVideo} ${p}%, #fff ${p}%)`,
+        backgroundImage: `linear-gradient(90deg, ${accentOnVideo} ${p}%, ${plain} ${p}%)`,
         WebkitBackgroundClip: 'text',
         backgroundClip: 'text',
       };
@@ -64,7 +69,7 @@ export const Subtitles: React.FC = () => {
       const scale = current ? interpolate(pop, [0, 1], [0.86, 1.12]) : 1;
       s = {
         ...base,
-        color: current ? accentOnVideo : '#fff',
+        color: current ? accentOnVideo : plain,
         opacity: spoken || current ? 1 : 0.9,
         transform: `scale(${scale})`,
         transformOrigin: '50% 55%',
@@ -89,7 +94,7 @@ export const Subtitles: React.FC = () => {
   const rect = chunk.rect;
   return (
     <AbsoluteFill style={{ pointerEvents: 'none', opacity: enter * exit }}>
-      {boxed ? null : <Scrim rect={rect} textColor="#ffffff" />}
+      {boxed || paper ? null : <Scrim rect={rect} textColor="#ffffff" />}
       <div
         style={{
           position: 'absolute',
@@ -99,7 +104,7 @@ export const Subtitles: React.FC = () => {
           display: 'flex',
           justifyContent: 'center',
           transform: `translateY(${(1 - enter) * 12}px)`,
-          filter: boxed ? undefined : dropFilterFor('#ffffff'),
+          filter: boxed || paper ? undefined : dropFilterFor('#ffffff'),
         }}
       >
         <div

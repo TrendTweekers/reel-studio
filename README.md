@@ -16,6 +16,14 @@ paper cut, magazine cover, chart grow, orbit, green screen, and 6 ways to show y
 pokazuje Twoją rolkę w różnych czcionkach, kolorach, napisach i efektach: klikasz, co Ci pasuje,
 i to staje się Twoim stylem.*
 
+**Video from text (no camera).** Choose "Film z tekstu" on Home. Type a topic, Claude writes a short
+script, you fix it, and you give it a voice: read it from the built-in teleprompter, drop a voice
+memo, or let the free computer voice read it (it runs on your Mac; record a 15 s sample so it sounds
+like you). Reel Studio then draws animated scenes (title, key words, list, number, quote, compare,
+your photo, your other reels) with subtitles and music. Claude plans the scenes; you change them in
+the "Sceny" panel. *Film z tekstu: bez kamery. Wpisujesz temat, Claude pisze tekst, Ty go czytasz
+(albo czyta go głos komputera), a Reel Studio robi z tego film ze scenami i napisami.*
+
 **YouTube videos (long).** Choose "YouTube video" when you add a 20 to 40 minute video. Reel
 Studio cuts pauses and the parts you said twice, finds rough chapters, and keeps the picture wide.
 Claude writes the chapters, title and description; you make a thumbnail and Shorts from the best

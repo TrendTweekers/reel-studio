@@ -7,19 +7,21 @@ description: >-
   say here", or wants a batch for their daily engagement round.
 ---
 
-> **For Paulina's Reel Studio (read first).** This skill is from Jake Schincariol's
+> **For this Reel Studio (read first).** This skill is from Jake Schincariol's
 > instagram-agent-skill (MIT, see LICENSE in this folder), adapted for this app.
-> - Every line she will SAY, show ON SCREEN or POST (hooks, script beats, captions, replies, DMs)
->   is in **Polish**, word for word, informal "Ty", unless she asks for another language. Do this
->   even when you talk to her in English: then explain in English, but keep those lines Polish.
-> - Her voice: `instagram/voice.md` (fill it with her if it is still empty) and `brand.md`.
+> - Who the user is: `settings.json` `brand` (name, handle, website, language, use). Read it first.
+> - Every line the user will SAY, show ON SCREEN or POST (hooks, script beats, captions, replies, DMs)
+>   is in the user's language (`brand.language`: Polish when `pl`, English when `en`), word for word.
+>   In Polish use informal "Ty". Do this even when you talk to them in another language: explain in
+>   their language, but keep those lines in the language of their content. Another language only if they ask.
+> - The user's voice: `instagram/voice.md` (fill it with them if it is still empty) and `brand.md`.
 > - Keywords: an end-card keyword (`/reel-endcard`, `keywords.md`) is the same as the comment
 >   keyword here. Never pick a keyword that another reel already uses.
-> - The scripts were made for English. On Polish text, trust: beat timing (`beats.py`), the
+> - The scripts were made for English. On Polish text (when `brand.language` is `pl`), trust: beat timing (`beats.py`), the
 >   caption preview box, length and hashtag checks (`caption.py`), and the typography clean-up
 >   (`humanize.py`; Polish quotes „like this” are correct, put them back if it changes them). Ignore on Polish: the hook score number, the "ask" count, and the HUMAN
 >   SCORE (they look for English words). Judge those parts yourself.
-> - Never post, comment, reply or send a DM for her. She does that herself.
+> - Never post, comment, reply or send a DM for the user. They do that themselves.
 > - Notes these skills keep (swipe.md, plan.md, log.md) live in the `instagram/` folder. Put the
 >   text files you feed to the scripts in `instagram/drafts/`.
 

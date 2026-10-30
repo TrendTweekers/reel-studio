@@ -26,3 +26,7 @@ instagram/*
 !instagram/voice.md
 !instagram/voice.template.md
 fx-test/
+
+# Computer voice (tools/tts_setup.py) and her voice sample
+.venv-tts/
+voice/

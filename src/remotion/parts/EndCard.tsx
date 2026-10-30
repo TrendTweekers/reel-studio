@@ -1,5 +1,5 @@
 // The closing card that sells the ebook: her last frame held, blurred and dimmed; the ebook cover
-// as a tilted book; "Napisz w komentarzu" / KEYWORD / sub; @paulinalipska at the bottom.
+// as a tilted book; "Napisz w komentarzu" / KEYWORD / sub; the user's @handle at the bottom.
 // Plays AFTER the last kept segment (model.total .. model.compFrames). Music fades under it (Sound).
 import React, { useState } from 'react';
 import { AbsoluteFill, Easing, Freeze, Img, interpolate, OffthreadVideo, Sequence, spring, useCurrentFrame } from 'remotion';
@@ -12,7 +12,7 @@ import { shadowFor } from '../legibility';
 import { CAPTION_CX, SAFE, SAFE_BOTTOM } from '../model';
 
 export const END_CARD_KEYWORD_AT = 12; // frame (inside the card) where the keyword lands: the ding
-export const HANDLE = '@paulinalipska';
+// The handle at the bottom comes from the brand settings (empty = no handle line).
 
 const COL_W = 820; // text column, clear of the right-hand button column
 const BOOK = { w: 400, h: 540 };
@@ -184,7 +184,7 @@ const CardInner: React.FC<{ frames: number }> = ({ frames }) => {
             textShadow: shadow,
           }}
         >
-          {HANDLE}
+          {props.brand?.handle ? `@${props.brand.handle}` : ''}
         </div>
         {/* a hairline under the keyword block, drawn out */}
         <div

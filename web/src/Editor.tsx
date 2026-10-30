@@ -4,6 +4,7 @@ import type { Edit, ReelClip, ReelProps } from '../../src/shared/types';
 import { FPS, HOOK_FONTS, SUBTITLE_FONTS } from '../../src/shared/types';
 import { outputFrames, outputToSource, sourceToOutput, totalFrames } from '../../src/shared/time';
 import { defaultLong, isLong, longSize, outputChapters } from '../../src/shared/long';
+import { isStory } from '../../src/shared/story';
 import {
   api,
   HttpError,
@@ -20,7 +21,8 @@ import {
 } from './api';
 import { editReducer, initialEditState, merge3 } from './editState';
 import { errText, fmt, num, plural, useT } from './i18n';
-import { go, LangSwitch } from './App';
+import { useBrand } from './brand';
+import { go, TopRight } from './App';
 import { StepList } from './Home';
 import { Preview } from './Preview';
 import { WordsPanel } from './WordsPanel';
@@ -31,6 +33,7 @@ import { VersionsMenu } from './VersionsMenu';
 import { EffectsPanel } from './EffectsPanel';
 import { EndCardPanel, PostPanel } from './PostPanels';
 import { BoardPanel, FontsPanel, HookPanel, MusicPanel, PausesPanel, RenderPanel, SfxPanel, VibePanel } from './Panels';
+import { defaultStory, StoryPanel } from './StoryPanel';
 import { ChaptersPanel, ShortsPanel, YoutubePanel, type ShortRange } from './LongPanels';
 
 export type Change = (fn: (e: Edit) => Edit, key?: string) => void;
@@ -55,6 +58,9 @@ const withDefaults = (e: Edit): Edit => ({
   sound: { effects: true, defaultSfx: 'pop', music: null, musicVolume: 0.25, duck: true, ...((e.sound ?? {}) as Partial<Edit['sound']>) },
   toggles: { zoomJumps: true, progressBar: false, grain: false, glowAboveHead: false, ...((e.toggles ?? {}) as Partial<Edit['toggles']>) },
   effects: Array.isArray(e.effects) ? e.effects : [],
+  ...(e.format === 'story'
+    ? { story: { ...defaultStory(), ...(e.story ?? {}), scenes: Array.isArray(e.story?.scenes) ? e.story.scenes : [] } }
+    : {}),
   ...(e.format === 'long' ? { long: { ...defaultLong(), ...(e.long ?? {}), chapters: Array.isArray(e.long?.chapters) ? e.long.chapters : [] } } : {}),
 });
 
@@ -80,6 +86,7 @@ const writeLS = (k: string, v: string) => {
 
 export function Editor({ slug }: { slug: string }) {
   const { t, lang } = useT();
+  const { brand } = useBrand();
   const [state, dispatch] = useReducer(editReducer, initialEditState);
   const [detail, setDetail] = useState<Omit<ProjectDetail, 'edit'> | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -98,6 +105,7 @@ export function Editor({ slug }: { slug: string }) {
   const titleRef = useRef<HTMLInputElement>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [selectedFx, setSelectedFx] = useState<string | null>(null);
+  const [selectedScene, setSelectedScene] = useState<string | null>(null);
   const [frame, setFrame] = useState(0);
   const [askOpen, setAskOpenState] = useState(() => readLS('reel-studio-ask-open') === '1');
   const [askRunning, setAskRunning] = useState(false);
@@ -117,6 +125,8 @@ export function Editor({ slug }: { slug: string }) {
   const edit = state.edit;
   // A long YouTube video (edit.format 'long'): other panels, a wide player, no reel-only extras.
   const long = isLong(edit);
+  // A video from text (edit.format 'story'): scenes instead of footage, nothing that needs a face.
+  const story = isStory(edit);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -450,8 +460,9 @@ export function Editor({ slug }: { slug: string }) {
       faces: detail.faces,
       urls: { video: u.video, cutout: detail.hasCutout ? u.cutout : null, board: u.board, sfx: u.sfx, music: u.music },
       reels,
+      brand: { name: brand.name, handle: brand.handle },
     };
-  }, [edit, detail, slug, reels]);
+  }, [edit, detail, slug, reels, brand.name, brand.handle]);
 
   const seekSource = useCallback(
     (src: number) => {
@@ -589,7 +600,7 @@ export function Editor({ slug }: { slug: string }) {
 
   // A long video where she said "następny" between reels: offer to split it.
   const splitCount = useMemo(
-    () => (detail && !detail.parent && !isLong(state.edit) ? detail.words.filter((w) => /^n[aą]st[eę]pn[ya]\W*$/i.test(w.text.trim())).length : 0),
+    () => (detail && !detail.parent && !isLong(state.edit) && !isStory(state.edit) ? detail.words.filter((w) => /^n[aą]st[eę]pn[ya]\W*$/i.test(w.text.trim())).length : 0),
     [detail, state.edit?.format], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [splitting, setSplitting] = useState(false);
@@ -743,7 +754,7 @@ export function Editor({ slug }: { slug: string }) {
             {t('askOpen')}
           </button>
         )}
-        <LangSwitch />
+        <TopRight />
       </div>
     </header>
   );
@@ -760,7 +771,7 @@ export function Editor({ slug }: { slug: string }) {
                 <p className="error-text">{errText(t, status.code, status.message)}</p>
               ) : (
                 <>
-                  <StepList status={status} notes />
+                  <StepList status={status} notes story={detail?.format === 'story'} />
                   <p className="muted">{t('processingNote')}</p>
                 </>
               )}
@@ -784,7 +795,15 @@ export function Editor({ slug }: { slug: string }) {
         { id: 'shorts', label: t('grp_shorts'), items: [['shorts', t('grp_shorts')]] },
         { id: 'finish', label: t('render'), items: [['render', t('render')]] },
       ]
-    : [
+    : story
+      ? [
+          { id: 'look', label: t('grp_look'), items: [['style', t('style')], ['fonts', t('fonts')], ['vibe', t('vibe')]] },
+          { id: 'words', label: t('grp_words'), items: [['words', t('words')], ['story', t('scenes')], ['effects', t('effectsInReel')], ['hook', t('hook')], ['pauses', t('pauses')]] },
+          { id: 'sound', label: t('grp_sound'), items: [['sfx', t('soundEffects')], ['music', t('music')]] },
+          { id: 'extras', label: t('grp_extras'), items: [['board', t('board')], ['endcard', t('endCard')], ['cover', t('cover')]] },
+          { id: 'finish', label: t('grp_finish'), items: [['post', t('post')], ['render', t('render')]] },
+        ]
+      : [
         { id: 'look', label: t('grp_look'), items: [['style', t('style')], ['fonts', t('fonts')], ['vibe', t('vibe')]] },
         { id: 'words', label: t('grp_words'), items: [['words', t('words')], ['effects', t('effectsInReel')], ['hook', t('hook')], ['pauses', t('pauses')]] },
         { id: 'sound', label: t('grp_sound'), items: [['sfx', t('soundEffects')], ['music', t('music')]] },
@@ -950,8 +969,8 @@ export function Editor({ slug }: { slug: string }) {
           )}
           {groupHead('look')}
           <StylePanel slug={slug} edit={edit} styles={styles.styles} defaultStyle={styles.defaultStyle} reloadStyles={reloadStyles} applyStyle={runApplyStyle} />
-          <FontsPanel edit={edit} change={change} long={long} />
-          <VibePanel edit={edit} change={change} slug={slug} long={long} />
+          <FontsPanel edit={edit} change={change} long={long} story={story} />
+          <VibePanel edit={edit} change={change} slug={slug} long={long} story={story} />
           {groupHead('words')}
           <WordsPanel
             edit={edit}
@@ -968,7 +987,27 @@ export function Editor({ slug }: { slug: string }) {
             onAdded={(id) => setSelectedFx(id)}
             long={long}
             onShort={long ? pickShort : undefined}
+            story={story}
+            onScene={(id) => {
+              setSelectedScene(id);
+              setTimeout(() => document.getElementById(`scene-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+            }}
           />
+          {story && (
+            <StoryPanel
+              edit={edit}
+              change={change}
+              board={board}
+              setBoard={setBoard}
+              reels={reels}
+              frame={frame}
+              seekSource={seekSource}
+              currentSource={currentSource}
+              selected={selectedScene}
+              setSelected={setSelectedScene}
+              productMode={detail?.mode === 'product'}
+            />
+          )}
           <EffectsPanel
             edit={edit}
             change={change}
@@ -980,6 +1019,7 @@ export function Editor({ slug }: { slug: string }) {
             seekSource={seekSource}
             sfx={sfx}
             long={long}
+            story={story}
             reels={reels}
           />
           {long ? (
@@ -1026,7 +1066,7 @@ export function Editor({ slug }: { slug: string }) {
               {groupHead('extras')}
               <BoardPanel board={board} setBoard={setBoard} usedBy={usedBy} />
               <EndCardPanel edit={edit} change={change} board={board} setBoard={setBoard} keywordsElsewhere={keywordsOther} />
-              <CoverPanel slug={slug} edit={edit} change={change} step={status?.step} bump={bump} currentSource={currentSource} />
+              <CoverPanel slug={slug} edit={edit} change={change} step={status?.step} bump={bump} currentSource={currentSource} story={story} />
               {groupHead('finish')}
               <PostPanel edit={edit} change={change} askDraft={askDraftFn} />
             </>

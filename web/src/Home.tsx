@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, mediaUrls, upload, type Format, type ProjectSummary, type Status, type Step } from './api';
 import { errText, fmt, useT, type StrKey } from './i18n';
-import { go, LangSwitch } from './App';
+import { go, TopRight } from './App';
+import { atHandle, useBrand } from './brand';
 import type { StyleItem } from './api';
 import { styleName } from './StylePanel';
 import { Check, HelpTip } from './ui';
 
 const STEPS: Step[] = ['normalize', 'transcribe', 'faces', 'autoedit', 'ready'];
+// A video from text has no face to find. 'voice' (the computer voice reads the script) comes first,
+// only when she chose the computer voice. Not known later, so it shows while it runs or when asked.
+const STORY_STEPS: Step[] = ['normalize', 'transcribe', 'autoedit', 'ready'];
 
-export function StepList({ status, notes }: { status: Status; notes?: boolean }) {
+export function StepList({ status, notes, story, aiVoice }: { status: Status; notes?: boolean; story?: boolean; aiVoice?: boolean }) {
   const { t } = useT();
-  const idx = STEPS.indexOf(status.step);
+  const steps = story ? (aiVoice || status.step === 'voice' ? ['voice' as Step, ...STORY_STEPS] : STORY_STEPS) : STEPS;
+  const idx = steps.indexOf(status.step);
   if (status.step === 'queued') {
     return <p className="queued-line">{status.position ? fmt(t('waitingInLine'), { n: status.position }) : t('step_queued')}…</p>;
   }
   return (
     <ol className="steps">
-      {STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const state = status.step === 'ready' || i < idx ? 'done' : i === idx ? 'now' : 'todo';
         return (
           <li key={s} className={state}>
@@ -29,7 +34,7 @@ export function StepList({ status, notes }: { status: Status; notes?: boolean })
                 <span style={{ width: `${Math.round((status.progress || 0) * 100)}%` }} />
               </span>
             )}
-            {notes && state === 'now' && s === 'transcribe' && <span className="step-note">{t('longestStep')}</span>}
+            {notes && state === 'now' && s === 'transcribe' && !story && <span className="step-note">{t('longestStep')}</span>}
           </li>
         );
       })}
@@ -52,6 +57,13 @@ const groupProjects = (list: ProjectSummary[]) => {
 
 export function Home() {
   const { t, lang } = useT();
+  const { brand } = useBrand();
+  // Which sections: filmed videos ("Twórcy"), product videos, or both (then with headers).
+  const showCreator = brand.use !== 'product';
+  const showProduct = brand.use !== 'creator';
+  const both = showCreator && showProduct;
+  // A person is greeted by the first name; a product or company by its full name.
+  const hello = brand.name.trim() ? (brand.use === 'creator' ? brand.name.trim().split(/\s+/)[0] : brand.name.trim()) : '';
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [up, setUp] = useState<{ name: string; progress: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -171,86 +183,139 @@ export function Home() {
           <span className="brand-mark">R</span>
           <span className="brand-name">Reel Studio</span>
         </div>
-        <LangSwitch />
+        <TopRight />
       </header>
 
       <main className="home-main">
-        <div className="format-pick" role="radiogroup" aria-label={t('fmtQ')}>
-          <span className="format-q">{t('fmtQ')}</span>
-          {(['reel', 'long'] as const).map((f) => (
-            <button key={f} role="radio" aria-checked={format === f} className={`format-opt ${format === f ? 'on' : ''}`} onClick={() => setFormat(f)} disabled={!!up}>
-              <span className={`format-shape ${f}`} aria-hidden />
-              <span className="format-text">
-                <span className="format-name">{f === 'long' ? t('fmtLong') : t('fmtReel')}</span>
-                <span className="format-sub">{f === 'long' ? t('fmtLongSub') : t('fmtReelSub')}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-        <div
-          className={`dropzone ${over ? 'over' : ''} ${up ? 'busy' : ''} ${long ? 'long' : ''}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setOver(true);
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setOver(false);
-            send(e.dataTransfer.files[0]);
-          }}
-          onClick={() => !up && input.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
-        >
-          <input
-            ref={input}
-            type="file"
-            accept="video/*,.mov,.MOV,.mp4"
-            hidden
-            onChange={(e) => {
-              send(e.target.files?.[0]);
-              e.target.value = '';
-            }}
-          />
-          {up ? (
-            <div className="drop-progress">
-              <div className="drop-title">
-                {t('uploading')} <em>{up.name}</em>
-              </div>
-              <div className="bar big">
-                <span style={{ width: `${Math.round(up.progress * 100)}%` }} />
-              </div>
-              <div className="muted">{Math.round(up.progress * 100)}%</div>
-            </div>
-          ) : (
-            <>
-              <div className="drop-icon" aria-hidden>
-                {long ? (
-                  <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
-                    <rect x="3" y="11" width="42" height="26" rx="4" />
-                    <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
-                    <rect x="14" y="5" width="20" height="38" rx="4" />
-                    <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </div>
-              <div className="drop-title">{long ? t('dropTitleLong') : t('dropTitle')}</div>
-              <div className="muted">{long ? t('dropHintLong') : t('dropHint')}</div>
-            </>
-          )}
-          {err && <div className="error-text">{err}</div>}
+        <div className="home-hello">
+          <h1 className="serif-title">{hello ? fmt(t('helloName'), { name: hello }) : t('hello')}</h1>
+          <p className="muted">
+            {t('helloSub')}
+            {brand.handle && <span className="home-handle"> · {atHandle(brand.handle)}</span>}
+          </p>
         </div>
 
-        {!long && (
-          <div className="batch-row">
-            <Check checked={batch} onChange={setBatch} label={t('batchLabel')} />
-            <HelpTip text={t('batchTip')} />
-          </div>
+
+        {showCreator && (
+          <section className="home-section creator-section">
+            {both && <h2 className="home-section-title">{t('secCreator')}</h2>}
+            <div className="format-pick" role="radiogroup" aria-label={t('fmtQ')}>
+              <span className="format-q">{t('fmtQ')}</span>
+              {(['reel', 'long'] as const).map((f) => (
+                <button key={f} role="radio" aria-checked={format === f} className={`format-opt ${format === f ? 'on' : ''}`} onClick={() => setFormat(f)} disabled={!!up}>
+                  <span className={`format-shape ${f}`} aria-hidden />
+                  <span className="format-text">
+                    <span className="format-name">{f === 'long' ? t('fmtLong') : t('fmtReel')}</span>
+                    <span className="format-sub">{f === 'long' ? t('fmtLongSub') : t('fmtReelSub')}</span>
+                  </span>
+                </button>
+              ))}
+              <span className="format-or" aria-hidden>
+                {t('fmtOr')}
+              </span>
+              <button className="format-opt story-opt" onClick={() => go('/story')} disabled={!!up}>
+                <span className="format-shape story" aria-hidden>
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="format-text">
+                  <span className="format-name">{t('fmtStory')}</span>
+                  <span className="format-sub">{t('fmtStorySub')}</span>
+                </span>
+                <span className="story-arrow" aria-hidden>
+                  →
+                </span>
+              </button>
+            </div>
+            <div
+              className={`dropzone ${over ? 'over' : ''} ${up ? 'busy' : ''} ${long ? 'long' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setOver(true);
+              }}
+              onDragLeave={() => setOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setOver(false);
+                send(e.dataTransfer.files[0]);
+              }}
+              onClick={() => !up && input.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
+            >
+              <input
+                ref={input}
+                type="file"
+                accept="video/*,.mov,.MOV,.mp4"
+                hidden
+                onChange={(e) => {
+                  send(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+              {up ? (
+                <div className="drop-progress">
+                  <div className="drop-title">
+                    {t('uploading')} <em>{up.name}</em>
+                  </div>
+                  <div className="bar big">
+                    <span style={{ width: `${Math.round(up.progress * 100)}%` }} />
+                  </div>
+                  <div className="muted">{Math.round(up.progress * 100)}%</div>
+                </div>
+              ) : (
+                <>
+                  <div className="drop-icon" aria-hidden>
+                    {long ? (
+                      <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
+                        <rect x="3" y="11" width="42" height="26" rx="4" />
+                        <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.4">
+                        <rect x="14" y="5" width="20" height="38" rx="4" />
+                        <path d="M24 16v14M18 24l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="drop-title">{long ? t('dropTitleLong') : t('dropTitle')}</div>
+                  <div className="muted">{long ? t('dropHintLong') : t('dropHint')}</div>
+                </>
+              )}
+              {err && <div className="error-text">{err}</div>}
+            </div>
+
+            {!long && (
+              <div className="batch-row">
+                <Check checked={batch} onChange={setBatch} label={t('batchLabel')} />
+                <HelpTip text={t('batchTip')} />
+              </div>
+        )}
+          </section>
+        )}
+
+        {showProduct && (
+          <section className="home-section product-section">
+            {both && <h2 className="home-section-title">{t('secProduct')}</h2>}
+            <button className="product-entry" onClick={() => go('/story/product')} disabled={!!up}>
+              <span className="product-icon" aria-hidden>
+                <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="5" y="9" width="38" height="26" rx="3" />
+                  <path d="M5 15h38M17 41h14M24 35v6" />
+                  <path d="M27 22l6 4-3 .8 1.8 3.4-1.6.8-1.8-3.4-2.2 2z" fill="currentColor" stroke="none" />
+                </svg>
+              </span>
+              <span className="format-text">
+                <span className="product-name">{t('productEntry')}</span>
+                <span className="format-sub">{t('productEntrySub')}</span>
+              </span>
+              <span className="story-arrow" aria-hidden>
+                →
+              </span>
+            </button>
+          </section>
         )}
 
         {working && workingReel && workingReel.status.step !== 'ready' && workingReel.status.step !== 'error' && (
@@ -273,7 +338,7 @@ export function Home() {
           </div>
         )}
 
-        {!lookDone && firstReady && (
+        {showCreator && !lookDone && firstReady && (
           <div className="look-invite">
             <div>
               <h2 className="serif-title">{t('lookHomeTitle')}</h2>
@@ -311,7 +376,7 @@ export function Home() {
         )}
 
         <div className="reels-head">
-          <h1 className="serif-title">{t('yourReels')}</h1>
+          <h2 className="serif-title">{t('yourVideos')}</h2>
           {projects && projects.length > 3 && (
             <input className="reel-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('search')} aria-label={t('search')} />
           )}
@@ -342,6 +407,7 @@ function ReelCard({ p, all, reload }: { p: ProjectSummary; all: ProjectSummary[]
     clips === 1 ? t('clipsOne') : lang === 'pl' && [2, 3, 4].includes(clips % 10) && ![12, 13, 14].includes(clips % 100) ? t('clipsMany') : t('clipsMany5');
   const urls = mediaUrls(p.slug);
   const long = p.format === 'long';
+  const story = p.format === 'story';
 
   useEffect(() => {
     if (!menu) return;
@@ -374,15 +440,18 @@ function ReelCard({ p, all, reload }: { p: ProjectSummary; all: ProjectSummary[]
   return (
     <article className={`reel-card ${ready ? 'ready' : ''} ${parent ? 'clip' : ''} ${busy ? 'busy' : ''} ${long ? 'long' : ''}`} onClick={() => ready && !renaming && go(`/p/${encodeURIComponent(p.slug)}`)}>
       <div className="thumb">
-        {p.status.step !== 'uploading' && p.status.step !== 'normalize' && !isError ? (
+        {p.status.step !== 'uploading' && p.status.step !== 'normalize' && p.status.step !== 'voice' && !isError ? (
           <video src={`${urls.video}#t=0.5`} preload="metadata" muted playsInline />
         ) : (
           <div className="thumb-empty" />
         )}
-        {long && <span className="yt-badge">{t('ytBadge')}</span>}
+        <span className={`yt-badge ${story ? (p.mode === 'product' ? 'product-badge' : 'story-badge') : long ? '' : 'reel-badge'}`}>
+          {long ? t('ytBadge') : story ? (p.mode === 'product' ? t('productBadge') : t('storyBadge')) : t('reelBadge')}
+        </span>
+        {story && ready && <span className="story-thumb-title">{p.title || t('untitled')}</span>}
         {!ready && !isError && (
           <div className="thumb-over">
-            <StepList status={p.status} />
+            <StepList status={p.status} story={story} />
           </div>
         )}
         <button

@@ -3,18 +3,21 @@ import { api, upload, type FileItem } from './api';
 import { errText, useT } from './i18n';
 
 // Board pictures to pick from, with a first "+ Add picture" tile that uploads and picks the new file.
+// isOn marks several pictures at once (pick = toggle), e.g. the screenshots of a product video.
 export function PictureGrid({
   board,
   setBoard,
   onPick,
   selected,
   used,
+  isOn,
 }: {
   board: FileItem[];
   setBoard: (b: FileItem[]) => void;
   onPick: (file: string) => void;
   selected?: string;
   used?: (file: string) => boolean;
+  isOn?: (file: string) => boolean;
 }) {
   const { t } = useT();
   const input = useRef<HTMLInputElement>(null);
@@ -56,7 +59,7 @@ export function PictureGrid({
         )}
       </button>
       {board.map((b) => (
-        <button key={b.file} className={`board-item ${b.file === selected ? 'on' : ''}`} onClick={() => onPick(b.file)}>
+        <button key={b.file} className={`board-item ${(isOn ? isOn(b.file) : b.file === selected) ? 'on' : ''}`} onClick={() => onPick(b.file)}>
           <img src={b.url} alt={b.file} loading="lazy" />
           {used?.(b.file) && <span className="used-tag">{t('used')}</span>}
         </button>

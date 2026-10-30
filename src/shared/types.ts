@@ -178,9 +178,64 @@ export type Edit = {
   // edit.segments, style, sound.music, light, wordFixes, effects of LONG_KINDS and edit.long.
   format?: VideoFormat;
   long?: LongSettings;
+  // 'story' = a video from text: no camera. Her voice (recorded) or the computer voice reads her script
+  // and animated scenes (src/remotion/story) are drawn instead of footage. proxy.mp4 holds a plain
+  // cream picture with the voice, so cuts, subtitles, music and render work as for a reel.
+  story?: StorySettings;
 };
 
-export type VideoFormat = 'reel' | 'long';
+export type VideoFormat = 'reel' | 'long' | 'story';
+
+// One animated scene of a story video. It starts at `at` (SOURCE seconds, like effects) and lasts
+// until the next scene starts (the last one until the end).
+export type StorySceneKind =
+  | 'title' // big serif title in the middle; text (+ items[0] as a small line under it)
+  | 'words' // key words appear one after another; text = the words, one line each with "\n"
+  | 'list' // a numbered list, items appear one by one during the scene; text = optional heading
+  | 'photo' // her board picture, slow zoom, framed; image (required), text = optional caption
+  | 'number' // a big number that counts up; items[0] = the number ("73%", "3", "120 zł"), text = what it means
+  | 'quote' // a quote in big italic with quote marks; text = the quote, items[0] = optional author
+  | 'compare' // two sides: items[0] = the "no" side, items[1] = the "yes" side; text = optional heading
+  | 'reels' // her other finished reels play in a grid of cards (reels = slugs, empty = newest); text = optional heading
+  // "Produkt" scenes: show an app, a website or a product (screenshots from the board).
+  | 'screen' // a screenshot inside a phone or browser frame, slow pan; image (required), frame, text = optional caption
+  | 'click' // the cursor moves to a point on the screenshot, clicks, and the view zooms there; image, frame, point, text = optional label
+  | 'type' // text is typed into a search or prompt box, then a result line appears; text = the typed text, items[0] = placeholder, items[1] = the result
+  | 'logos' // a grid of 2 to 6 cards with names (tools, features, plans); items = names, text = optional heading
+  | 'price'; // a price: items[0] = old price (crossed out, optional ""), items[1] = the price, text = what you get
+export type StoryScene = {
+  id: string;
+  at: number;
+  kind: StorySceneKind;
+  text?: string;
+  items?: string[];
+  image?: string; // board picture file
+  reels?: string[];
+  frame?: 'phone' | 'browser' | 'plain'; // screen, click: how the screenshot is framed (default: phone for tall pictures, browser for wide)
+  point?: { x: number; y: number }; // click: where on the picture, 0..1 from the top-left corner
+};
+export const STORY_PRODUCT_KINDS: StorySceneKind[] = ['screen', 'click', 'type', 'logos', 'price'];
+export type StorySettings = {
+  script: string; // the text that is read
+  voice: 'own' | 'ai'; // her recording, or the computer voice
+  background: 'cream' | 'ink' | 'accent'; // the scenes' colour world (accent = style.accentColor)
+  scenes: StoryScene[];
+};
+// Who uses this copy of Reel Studio (settings.json "brand"). Set once on the first start; Claude reads
+// brand.md for lasting wishes, this holds the facts the page and the videos need.
+export type BrandSettings = {
+  name: string; // "Paulina Lipska" or a product name
+  handle?: string; // @instagram
+  website?: string;
+  language: 'pl' | 'en'; // the page and Claude's answers
+  use: 'creator' | 'product' | 'both'; // which home sections show: filmed reels, product videos, or both
+  accent?: string; // the default accent colour for new reels
+  logo?: string; // board picture file (product videos, end cards)
+  done: boolean; // the first-start setup was completed
+};
+
+// Effects that make no sense without a person on camera; a story video ignores them.
+export const STORY_SKIP_KINDS: EffectKind[] = ['behind', 'zoom', 'framebreak', 'papercut', 'vertigo', 'pullback', 'greenscreen', 'cover', 'zoomthrough', 'orbit', 'envelope', 'conveyor', 'clothesline'];
 
 // A chapter of a long video. at = SOURCE seconds where it starts. YouTube shows chapters from the
 // description: the first must be at 0:00, at least 3, each 10 s or longer (see chapterList()).
@@ -260,7 +315,10 @@ export type ProjectMeta = {
   autoTitle?: boolean; // true when the title was taken from the transcript (file was IMG_1234 etc.)
   // Batch video (upload header x-batch: 1): split into clips after analysis. clips = the clip slugs.
   batch?: { requested?: boolean; clips?: string[]; reason?: string };
-  format?: VideoFormat; // 'long' when uploaded as a YouTube video
+  format?: VideoFormat; // 'long' when uploaded as a YouTube video, 'story' for a video from text
+  // A video from text, before its first edit exists: how it was made (the script is in script.txt).
+  story?: { voice: StorySettings['voice']; background: StorySettings['background']; language: string; mode?: 'creator' | 'product' };
+  storyPlanned?: boolean; // Claude planned the scenes once (after the first edit)
 };
 
 export type RenderVariant = 'instagram' | 'tiktok';
@@ -281,7 +339,7 @@ export type ErrorCode =
   | 'unknown';
 
 // status.json of a project. 'queued' = waiting for another reel; position 1 = next in line.
-export type ProjectStep = 'queued' | 'uploading' | 'normalize' | 'transcribe' | 'faces' | 'autoedit' | 'cutout' | 'covers' | 'ready' | 'error';
+export type ProjectStep = 'queued' | 'uploading' | 'voice' | 'normalize' | 'transcribe' | 'faces' | 'autoedit' | 'cutout' | 'covers' | 'ready' | 'error';
 export type ProjectStatus = {
   step: ProjectStep;
   progress: number;
@@ -323,4 +381,6 @@ export type ReelProps = {
   // Her other finished reels, newest first (for envelope, folder, polaroid, ...). Missing = none:
   // those effects then show short parts of this video instead.
   reels?: ReelClip[];
+  // Who the video is for: the end card handle, the notification name in app cards.
+  brand?: { name: string; handle?: string };
 };

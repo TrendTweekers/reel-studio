@@ -22,4 +22,20 @@ Models download on first use into `<root>/models` (Whisper from Hugging Face, Me
 Server order: `normalize` first, then `transcribe`, `faces`, `cutout` (the last three are independent and can run in parallel).
 Example: `PATH=... .venv/bin/python tools/normalize.py projects/<slug>`.
 
+## Computer voice (separate venv)
+
+Chatterbox Multilingual V3 (Resemble AI, MIT code and weights), offline, Polish and 22 other languages,
+optional voice cloning from a short sample. It lives in its own venv `.venv-tts` so torch never changes `.venv`.
+
+| Tool | Reads | Writes | Notes |
+|---|---|---|---|
+| `tts_setup.py [--force-install] [--skip-download]` | `tools/requirements-tts.txt` | `.venv-tts/`, `models/tts/chatterbox/` | Run with a system Python 3.10 to 3.12 (macOS: Homebrew `python3.12`). Linux gets CPU-only torch, macOS normal torch (MPS). Weights (about 3.1 GB) go into `models/tts`, never `~/.cache`. Safe to run again: skips a finished install (hash of the requirements file) and resumes a broken download. Steps: `venv`, `install`, `download`, `verify`. |
+| `tts.py --check` | none | none | `{"ready":true\|false,"reason":"..."}`, no model load, works with any Python 3. |
+| `tts.py <project_dir> --text-file F [--lang pl] [--sample S] [--out source.wav]` | text file, sample | `source.wav` | Run with `.venv-tts/bin/python`. One generation per sentence (long ones cut at commas, very short ones joined), retried with another seed if its length is far off. 0.25 s pause between sentences, 0.45 s between paragraphs (blank line), ends trimmed, about -16 LUFS, 48 kHz 16 bit mono. `--sample`: her voice, any ffmpeg format, 5 to 30 s. Device cuda, else mps (falls back to cpu on an error), else cpu. Progress: `load`, `voice` (per chunk), `write`. Last line: `{"done":true,"duration":..,"file":"source.wav","seconds":..,"rtf":..}`. |
+| `tts.py --text "..." --out F.wav [--sample S] [--lang pl]` | none | `F.wav` | Quick preview line, no project dir. |
+
+Every output has Resemble's inaudible Perth watermark (marks it as AI audio). Use only one TTS job at a time: the model needs about 3 GB RAM.
+
 All JSON outputs are written to a `.tmp` file and renamed (atomic). Changes: `audit/tools-fixes.md`.
+
+Built-in voices: `tts_setup.py` also downloads two short CC0 Polish recordings (Nabu Casa voice datasets, public domain) into `models/tts/voices/` (`pl-f.mp3` female, `pl-m.mp3` male). Without `--sample`, `tts.py` clones `<lang>-f.mp3` when it exists, so Polish has no English accent. English uses the model's own voice.

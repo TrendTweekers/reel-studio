@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Edit, EffectKind, Word } from '../../src/shared/types';
-import { FPS, LONG_KINDS, NEEDS_CUTOUT } from '../../src/shared/types';
+import { FPS, LONG_KINDS, NEEDS_CUTOUT, STORY_SKIP_KINDS } from '../../src/shared/types';
 import { outputToSource, sourceToOutput } from '../../src/shared/time';
 import type { FileItem } from './api';
 import type { Change } from './Editor';
 import { cutRange, isWordKept, keepRange, KIND_ICON, newEffect, sortEffects } from './editState';
 import { fmt, useT, type StrKey } from './i18n';
 import { PictureGrid } from './PictureGrid';
+import { newScene, sortScenes, defaultStory } from './StoryPanel';
 import { fmtTime, Panel } from './ui';
 
 const ACTIONS: EffectKind[] = ['picture', 'label', 'zoom', 'glass', 'behind', 'chapter', 'emoji', 'checklist', 'flash'];
@@ -42,6 +43,8 @@ export function WordsPanel({
   onAdded,
   long,
   onShort,
+  story,
+  onScene,
 }: {
   edit: Edit;
   change: Change;
@@ -58,8 +61,14 @@ export function WordsPanel({
   // Long YouTube video: only the effects it can show, and "Make a Short" on a selection.
   long?: boolean;
   onShort?: (start: number, end: number) => void;
+  // A video from text: no effects that need a person on camera, and "New scene here".
+  story?: boolean;
+  onScene?: (id: string) => void;
 }) {
-  const actions = long ? ACTIONS.filter((k) => LONG_KINDS.includes(k)) : ACTIONS;
+  const noStory = (k: EffectKind) => !story || !STORY_SKIP_KINDS.includes(k);
+  const actions = (long ? ACTIONS.filter((k) => LONG_KINDS.includes(k)) : ACTIONS).filter(noStory);
+  const scenes = SCENES.filter(noStory);
+  const reelFx = REEL_FX.filter(noStory);
   const { t } = useT();
   const [open, setOpen] = useState<number | null>(null);
   const [sel, setSel] = useState<[number, number] | null>(null);
@@ -261,6 +270,25 @@ export function WordsPanel({
     close();
   };
 
+  // Story: a new scene starts at this word, showing the rest of its sentence.
+  const addScene = () => {
+    if (open === null) return;
+    const sent = sentenceOf(open);
+    const text = sent
+      .filter((i) => i >= open)
+      .map(textOf)
+      .join(' ')
+      .replace(/[.,;:…]+$/, '')
+      .trim();
+    const sc = newScene(words[open].start, text);
+    change((e) => {
+      const st = e.story ?? defaultStory();
+      return { ...e, story: { ...st, scenes: sortScenes([...(st.scenes ?? []), sc]) } };
+    });
+    onScene?.(sc.id);
+    close();
+  };
+
   const setRange = (a: number, b: number, keep: boolean) => {
     const s = words[a].start;
     const e2 = words[b].end;
@@ -398,6 +426,14 @@ export function WordsPanel({
             )}
             {mode === 'menu' && (
               <>
+                {story && (
+                  <div className="pop-row single">
+                    <button className="pop-act wide scene-act" onClick={addScene}>
+                      <span className="pop-icon">＋</span>
+                      {t('sceneNewHere')}
+                    </button>
+                  </div>
+                )}
                 <div className="pop-grid">
                   {actions.map((k) => (
                     <button
@@ -417,7 +453,7 @@ export function WordsPanel({
                 {!long && <div className="group-label pop-group">{t('moreEffects')}</div>}
                 {!long && (
                 <div className="pop-grid">
-                  {SCENES.map((k) => (
+                  {scenes.map((k) => (
                     <button
                       key={k}
                       className="pop-act"
@@ -434,10 +470,10 @@ export function WordsPanel({
                   ))}
                 </div>
                 )}
-                {!long && <div className="group-label pop-group">{t('showMyReels')}</div>}
-                {!long && (
+                {!long && reelFx.length > 0 && <div className="group-label pop-group">{t('showMyReels')}</div>}
+                {!long && reelFx.length > 0 && (
                 <div className="pop-grid">
-                  {REEL_FX.map((k) => (
+                  {reelFx.map((k) => (
                     <button key={k} className="pop-act" title={t(`tip_${k}` as StrKey)} onClick={() => add(k)}>
                       <span className="pop-icon">{KIND_ICON[k]}</span>
                       {t(`act_${k}` as StrKey)}

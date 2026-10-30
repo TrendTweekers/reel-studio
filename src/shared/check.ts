@@ -1,12 +1,15 @@
 // The checks for an edit, shared by `npm run check` (for Claude) and GET /api/projects/:slug/problems
 // (for the page, before "Make the video"). Each problem has a plain sentence for her and a technical
 // detail for Claude.
-import { HOOK_FONTS, LONG_KINDS, NEEDS_CUTOUT, SFX_NAMES, SUBTITLE_FONTS, type Edit, type Word } from './types';
+import { HOOK_FONTS, LONG_KINDS, NEEDS_CUTOUT, SFX_NAMES, STORY_SKIP_KINDS, SUBTITLE_FONTS, type Edit, type StorySceneKind, type Word } from './types';
+import { isStory } from './story';
+
+const STORY_KINDS: StorySceneKind[] = ['title', 'words', 'list', 'photo', 'number', 'quote', 'compare', 'reels', 'screen', 'click', 'type', 'logos', 'price'];
 import { sourceToOutput } from './time';
 import { isLong, outputChapters } from './long';
 
 export type Problem = {
-  code: 'empty' | 'bad_long' | 'bad_segment' | 'bad_style' | 'music_missing' | 'picture_missing' | 'text_missing' | 'items_missing' | 'bad_effect' | 'cutout_missing' | 'bad_cover' | 'bad_fix';
+  code: 'empty' | 'bad_long' | 'bad_story' | 'bad_segment' | 'bad_style' | 'music_missing' | 'picture_missing' | 'text_missing' | 'items_missing' | 'bad_effect' | 'cutout_missing' | 'bad_cover' | 'bad_fix';
   text: string; // plain words, for Paulina
   detail: string; // technical, for Claude
   effectId?: string;
@@ -79,7 +82,9 @@ export const checkEdit = (
     if (e.kind === 'checklist' && !e.items?.length) add({ code: 'items_missing', text: `The list${on} is empty.`, detail: `${name}: needs items`, effectId: e.id });
     if (e.position && !POSITIONS.includes(e.position)) add({ code: 'bad_effect', text: `An effect${on} has an unknown place.`, detail: `${name}: position must be one of: ${POSITIONS.join(', ')}`, effectId: e.id });
     if (e.sfx && e.sfx !== 'none' && e.sfx !== 'default' && !SFX_NAMES.includes(e.sfx)) add({ code: 'bad_effect', text: `An effect${on} has an unknown sound.`, detail: `${name}: unknown sound "${e.sfx}"`, effectId: e.id });
-    if (NEEDS_CUTOUT.includes(e.kind) && !ctx.hasCutout)
+    if (isStory(edit) && STORY_SKIP_KINDS.includes(e.kind))
+      add({ code: 'bad_story', text: `"${NICE[e.kind] ?? e.kind}"${on} needs you on camera, so a video from text does not show it.`, detail: `${name}: a story video ignores ${STORY_SKIP_KINDS.join(', ')}`, effectId: e.id });
+    else if (NEEDS_CUTOUT.includes(e.kind) && !ctx.hasCutout)
       add({ code: 'cutout_missing', text: `"${NICE[e.kind] ?? e.kind}"${on} needs the cut-out first. It is made once, in a few minutes.`, detail: `${name}: needs the person cut-out (POST /api/projects/<slug>/cutout)`, effectId: e.id });
   }
   if (edit.cover) {
@@ -101,6 +106,38 @@ export const checkEdit = (
       add({ code: 'bad_long', text: 'The name tag has no name or is outside the video.', detail: 'long.nameTag needs name and at inside the video' });
     if (L?.thumbnail && !(L.thumbnail.t >= 0 && L.thumbnail.t <= dur)) add({ code: 'bad_long', text: 'The thumbnail frame is outside the video.', detail: `long.thumbnail.t must be 0..${dur.toFixed(1)}` });
     if ((L?.title?.length ?? 0) > 100) add({ code: 'bad_long', text: 'The YouTube title is longer than 100 characters.', detail: 'long.title max 100 characters' });
+  }
+  if (isStory(edit)) {
+    const S = edit.story;
+    if (!S) add({ code: 'bad_story', text: 'The scenes of this video are missing.', detail: 'format "story" needs edit.story (StorySettings)' });
+    if (S && !['cream', 'ink', 'accent'].includes(S.background)) add({ code: 'bad_story', text: 'The background colour is unknown.', detail: 'story.background must be cream, ink or accent' });
+    if (S && !S.scenes.length) add({ code: 'bad_story', text: 'This video has no scenes yet.', detail: 'story.scenes is empty' });
+    const ids = new Set<string>();
+    for (const [i, sc] of (S?.scenes ?? []).entries()) {
+      const nm = `scene ${sc.id ?? i} (${sc.kind})`;
+      if (!sc.id || ids.has(sc.id)) add({ code: 'bad_story', text: 'Two scenes have the same id.', detail: `${nm}: id missing or used twice` });
+      ids.add(sc.id);
+      if (!STORY_KINDS.includes(sc.kind)) add({ code: 'bad_story', text: 'A scene is of an unknown kind.', detail: `${nm}: kind must be one of ${STORY_KINDS.join(', ')}` });
+      if (!(sc.at >= 0 && sc.at <= dur)) add({ code: 'bad_story', text: 'A scene is outside the video.', detail: `${nm}: at=${sc.at} must be 0..${dur.toFixed(1)}` });
+      const items = (sc.items ?? []).filter((x) => x.trim());
+      if ((sc.kind === 'title' || sc.kind === 'words' || sc.kind === 'quote') && !sc.text?.trim()) add({ code: 'text_missing', text: `A ${sc.kind} scene has no text.`, detail: `${nm}: needs text` });
+      if (sc.kind === 'list' && items.length < 2) add({ code: 'items_missing', text: 'A list scene needs at least 2 points.', detail: `${nm}: items needs 2 or more` });
+      if (sc.kind === 'number' && !items.length) add({ code: 'items_missing', text: 'A number scene has no number.', detail: `${nm}: items[0] = the number` });
+      if (sc.kind === 'compare' && items.length < 2) add({ code: 'items_missing', text: 'A compare scene needs both sides.', detail: `${nm}: items[0] = no side, items[1] = yes side` });
+      if (sc.kind === 'photo' && (!sc.image || !ctx.board.has(sc.image)))
+        add({ code: 'picture_missing', text: sc.image ? `The picture "${sc.image}" in a scene is missing. Pick another one.` : 'A photo scene has no picture yet.', detail: `${nm}: image "${sc.image ?? ''}" is not in board/` });
+      // Product scenes: real screenshots from the board only.
+      if ((sc.kind === 'screen' || sc.kind === 'click') && (!sc.image || !ctx.board.has(sc.image)))
+        add({ code: 'picture_missing', text: sc.image ? `The screenshot "${sc.image}" in a scene is missing. Pick another one.` : `A ${sc.kind} scene has no screenshot yet.`, detail: `${nm}: image "${sc.image ?? ''}" is not in board/` });
+      if ((sc.kind === 'screen' || sc.kind === 'click') && sc.frame && !['phone', 'browser', 'plain'].includes(sc.frame))
+        add({ code: 'bad_story', text: 'A screenshot scene has an unknown frame.', detail: `${nm}: frame must be phone, browser or plain` });
+      if (sc.kind === 'click' && !(sc.point && sc.point.x >= 0 && sc.point.x <= 1 && sc.point.y >= 0 && sc.point.y <= 1))
+        add({ code: 'bad_story', text: 'A click scene does not say where to click.', detail: `${nm}: point {x, y} 0..1 on the picture is required` });
+      if (sc.kind === 'type' && !sc.text?.trim()) add({ code: 'text_missing', text: 'A typing scene has no text to type.', detail: `${nm}: needs text (items[0] = placeholder, items[1] = result)` });
+      if (sc.kind === 'logos' && items.length < 2) add({ code: 'items_missing', text: 'A logos scene needs at least 2 names.', detail: `${nm}: items needs 2 to 6 names` });
+      if (sc.kind === 'logos' && items.length > 6) add({ code: 'items_missing', text: 'A logos scene shows at most 6 names.', detail: `${nm}: items has ${items.length}, only the first 6 show` });
+      if (sc.kind === 'price' && !sc.items?.[1]?.trim()) add({ code: 'items_missing', text: 'A price scene has no price.', detail: `${nm}: items[1] = the price (items[0] = old price or "")` });
+    }
   }
   return out;
 };

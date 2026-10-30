@@ -337,7 +337,7 @@ export function mountLooks(app: express.Express, d: Deps) {
     const notes = oneLine(String(brand.notes ?? ''));
     if (notes) lines.push(`${MARK} notes: ${notes}`);
     try {
-      const old = fs.existsSync(brandFile) ? fs.readFileSync(brandFile, 'utf8') : '# Paulina\'s lasting preferences\n';
+      const old = fs.existsSync(brandFile) ? fs.readFileSync(brandFile, 'utf8') : '# Lasting preferences\n';
       const kept = old.split('\n').filter((l) => !l.startsWith(MARK));
       while (kept.length && kept[kept.length - 1].trim() === '') kept.pop();
       fs.writeFileSync(brandFile, [...kept, ...lines].join('\n') + '\n');

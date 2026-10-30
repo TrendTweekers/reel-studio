@@ -21,7 +21,7 @@ export const sampleLong: ReelProps = {
         { at: 3.7, title: 'O montażu' },
         { at: 11.8, title: 'Mój proces' },
       ],
-      nameTag: { name: 'Paulina', line: 'stylistka', at: 0.5, duration: 3 },
+      nameTag: { name: 'Anna', line: 'stylistka', at: 0.5, duration: 3 },
     },
   },
 };

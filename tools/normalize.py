@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""normalize.py <project_dir> [--long]  ->  proxy.mp4 (1080x1920, 30fps CFR, H.264, AAC 48k stereo) + audio16k.wav
+"""normalize.py <project_dir> [--long | --story]  ->  proxy.mp4 (1080x1920, 30fps CFR, H.264, AAC 48k stereo) + audio16k.wav
 
 --long (a YouTube video): no crop. Wide sources become 1920x1080, tall ones 1080x1920 (fit + pad), and the
 picture is stored a little smaller (crf 21), because a 30 minute proxy at crf 18 would take several GB.
@@ -163,6 +163,34 @@ def face_crop_x(src, dur, dw, dh, sw):
     return x - (x % 2)
 
 
+def story_proxy(d, src, info):
+    """A video from text: the source is only her voice. The proxy gets a plain cream picture (the story
+    scenes are drawn over it), so cuts, subtitles and the render work exactly as for a filmed reel."""
+    if not any(s.get("codec_type") == "audio" for s in info["streams"]):
+        fail("the voice file has no sound")
+    dur = duration_of(info)
+    progress("probe", 1.0)
+    proxy = os.path.join(d, "proxy.mp4")
+    tmp = os.path.join(d, "proxy.tmp.mp4")
+    args = ["-f", "lavfi", "-i", f"color=c=0xF4EFE7:s={W}x{H}:r={FPS}", "-i", src,
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-af", "aresample=async=1:first_pts=0",
+            "-c:v", "libx264", "-crf", "30", "-preset", "veryfast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+            "-g", "30", "-keyint_min", "30", "-sc_threshold", "0",
+            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-t", f"{dur:.3f}", "-movflags", "+faststart", "-map_metadata", "-1", "-f", "mp4", tmp]
+    err = run_ffmpeg_progress(args, dur, "proxy", fatal=False)
+    if err is not None:
+        fail(err)
+    os.replace(tmp, proxy)
+    wav = os.path.join(d, "audio16k.wav")
+    run_ffmpeg_progress(["-i", proxy, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav], dur, "audio16k")
+    pinfo = probe(proxy)
+    emit(done=True, proxy="proxy.mp4", audio="audio16k.wav", duration=round(duration_of(pinfo), 3),
+         sourceDuration=round(dur, 3), source={"story": True, "hasAudio": True}, width=W, height=H, fps=f"{FPS}/1")
+
+
 def main():
     if len(sys.argv) < 2:
         fail("usage: normalize.py <project_dir> [--long]")
@@ -170,6 +198,8 @@ def main():
     long_video = "--long" in sys.argv[2:]
     src = find_source(d)
     info = probe(src)
+    if "--story" in sys.argv[2:]:
+        return story_proxy(d, src, info)
     vs = [s for s in info["streams"] if s.get("codec_type") == "video" and s.get("disposition", {}).get("attached_pic", 0) != 1]
     if not vs:
         fail("source has no video stream")

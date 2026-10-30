@@ -2,11 +2,11 @@
 // tools and the render. Everything stays on this computer.
 import express from 'express';
 import multer from 'multer';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CoverCandidate, CoverProps, Edit, ErrorCode, FaceSample, ProjectMeta, ProjectStatus, ProjectStep, ReelProps, RenderVariant, Word } from '../src/shared/types';
+import type { BrandSettings, CoverCandidate, CoverProps, Edit, ErrorCode, FaceSample, ProjectMeta, ProjectStatus, ProjectStep, ReelProps, RenderVariant, Word } from '../src/shared/types';
 import { faceAt } from '../src/shared/time';
 import { SFX_NAMES } from '../src/shared/types';
 import { checkEdit } from '../src/shared/check';
@@ -24,6 +24,7 @@ import { mountLooks } from './looks';
 import { autoTitle, isGenericTitle, titleFromWords } from './title';
 import { findRetakes, longFirstEdit, subtract } from './longedit';
 import { herReels } from './reels';
+import { storyFirstEdit } from './storyedit';
 import { isLong, longSize } from '../src/shared/long';
 import type { ThumbnailProps } from '../src/shared/types';
 
@@ -126,11 +127,11 @@ const plainOf = (e: unknown, fallback: ErrorCode = 'unknown') => {
 };
 
 // Runs one tool in tools/. Each tool prints JSON lines: {"step","progress"} ... {"done":true} or {"error"}.
-const runTool = (slug: string, tool: string, step: Step, args: string[] = []) =>
+const runTool = (slug: string, tool: string, step: Step, args: string[] = [], python = PYTHON) =>
   new Promise<void>((resolve, reject) => {
     setStatus(slug, { step, progress: 0 });
     // Own process group, so stopping the server also stops the ffmpeg the tool started.
-    const p = track(spawn(PYTHON, [path.join(ROOT, 'tools', `${tool}.py`), dir(slug), ...args], { cwd: ROOT, env: process.env, detached: true }));
+    const p = track(spawn(python, [path.join(ROOT, 'tools', `${tool}.py`), dir(slug), ...args], { cwd: ROOT, env: process.env, detached: true }));
     let err = '';
     let lastError = '';
     let buf = '';
@@ -188,6 +189,7 @@ const probeSize = (p: string) =>
     f.on('error', () => resolve({ width: 1080, height: 1920 }));
   });
 const isLongProject = (slug: string) => meta(slug).format === 'long';
+const isStoryProject = (slug: string) => meta(slug).format === 'story';
 
 // ---- Editing styles ----
 const ownStyles = (): EditingStyle[] => listFiles(STYLES, /\.json$/).map((f) => readJson<EditingStyle | null>(path.join(STYLES, f), null)).filter((x): x is EditingStyle => !!x?.id);
@@ -220,6 +222,14 @@ const jsonArrayOk = (p: string) => {
 
 const runAnalyse = async (slug: string, force: boolean) => {
   try {
+    const story = isStoryProject(slug);
+    // A video from text with the computer voice: the voice file IS the source, made first.
+    if (story && !sourceOf(slug) && meta(slug).story?.voice === 'ai') {
+      if (!ttsReady()) throw new ToolError('The computer voice is not installed yet', 'tool_missing');
+      const sample = voiceSample();
+      setStatus(slug, { step: 'voice', progress: 0 });
+      await withVoice(() => runTool(slug, 'tts', 'voice', ['--text-file', file(slug, 'script.txt'), '--lang', meta(slug).story?.language ?? 'pl', ...(sample ? ['--sample', sample] : [])], TTS_PYTHON));
+    }
     const src = sourceOf(slug);
     if (!src) throw new ToolError('no source file', 'upload_incomplete');
     const srcTime = mtime(src);
@@ -231,9 +241,10 @@ const runAnalyse = async (slug: string, force: boolean) => {
       normalized = pd > 0 && Math.abs(pd - wd) < 1;
     }
     const long = isLongProject(slug);
-    if (!normalized) await runTool(slug, 'normalize', 'normalize', long ? ['--long'] : []);
+    if (!normalized) await runTool(slug, 'normalize', 'normalize', long ? ['--long'] : story ? ['--story'] : []);
     if (force || !jsonArrayOk(file(slug, 'words.json'))) {
-      await runTool(slug, 'transcribe', 'transcribe', process.env.REEL_LANGUAGE ? ['--language', process.env.REEL_LANGUAGE] : []);
+      const language = process.env.REEL_LANGUAGE ?? (story ? meta(slug).story?.language : undefined);
+      await runTool(slug, 'transcribe', 'transcribe', language ? ['--language', language] : []);
       // A file name ("IMG_4821", "VID_...", "source") never becomes the title: some styles print it.
       const m = meta(slug);
       if (isGenericTitle(m.title)) {
@@ -242,12 +253,25 @@ const runAnalyse = async (slug: string, force: boolean) => {
       }
     }
     // A long video: a face sample every 0.5 s is plenty (only the zoom jumps and the thumbnail use it).
+    // A video from text has no face to find.
+    if (story && !jsonArrayOk(file(slug, 'faces.json'))) writeJson(file(slug, 'faces.json'), []);
     if (force || !jsonArrayOk(file(slug, 'faces.json'))) await runTool(slug, 'faces', 'faces', long ? ['--every', '0.5'] : []);
     setStatus(slug, { step: 'autoedit', progress: 0.5 });
     if (!fs.existsSync(file(slug, 'edit.json'))) {
       const transcript = readJson<{ language?: string }>(file(slug, 'transcript.json'), {});
       const firstOf = async () =>
-        long
+        story
+          ? storyFirstEdit({
+              title: meta(slug).title ?? '',
+              language: meta(slug).story?.language ?? transcript.language ?? 'pl',
+              duration: await probeDuration(file(slug, 'proxy.mp4')),
+              words: readJson(file(slug, 'words.json'), []),
+              script: readText(file(slug, 'script.txt')),
+              voice: meta(slug).story?.voice ?? 'own',
+              background: meta(slug).story?.background ?? 'cream',
+              look: defaultLook(),
+            })
+          : long
           ? longFirstEdit({
               title: isGenericTitle(meta(slug).title) ? '' : (meta(slug).title ?? ''),
               language: transcript.language ?? 'pl',
@@ -266,7 +290,7 @@ const runAnalyse = async (slug: string, force: boolean) => {
         look: defaultLook(),
       });
       // Auto light fix, measured once from her video. A failed measure just leaves it off.
-      try {
+      if (!story) try {
         edit.light = { auto: true, strength: 1, fix: await measureLight(file(slug, 'proxy.mp4')) };
       } catch (e) {
         toolLog(slug, `\n== light measure skipped: ${(e as Error).message}\n`);
@@ -275,6 +299,7 @@ const runAnalyse = async (slug: string, force: boolean) => {
       setMeta(slug, { summary: summarizeFirstEdit(edit) });
     }
     setStatus(slug, { step: 'ready', progress: 1 });
+    if (story && !meta(slug).storyPlanned) planStory(slug);
     const b = meta(slug).batch;
     if (b?.requested && !b.clips?.length && !b.reason) {
       const r = splitProject(slug);
@@ -400,6 +425,7 @@ export const reelProps = (slug: string, origin = ORIGIN): ReelProps => ({
     music: `${origin}/music/`,
   },
   reels: herReels(PROJECTS, origin, slug),
+  brand: { name: brandOf().name, handle: brandOf().handle },
 });
 
 // "<Title> <dd.mm HH-MM>.mp4" in local time. Polish letters stay; only characters that a Mac or
@@ -631,7 +657,7 @@ app.get('/api/projects', (_req, res) => {
     .filter((s) => safeSlug(s) && fs.statSync(dir(s)).isDirectory())
     .map((slug) => {
       const m = meta(slug);
-      return { slug, title: m.title ?? slug, createdAt: m.createdAt ?? '', status: statusOf(slug), parent: m.parent ?? null, format: m.format ?? 'reel' };
+      return { slug, title: m.title ?? slug, createdAt: m.createdAt ?? '', status: statusOf(slug), parent: m.parent ?? null, format: m.format ?? 'reel', mode: m.story?.mode ?? null };
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json(items);
@@ -718,6 +744,7 @@ app.get('/api/projects/:slug', (req, res) => {
     parent: m.parent ?? null,
     range: m.range ?? null,
     format: m.format ?? 'reel',
+    mode: m.story?.mode ?? null,
   });
 });
 
@@ -1315,16 +1342,19 @@ app.get('/api/projects/:slug/ask', (req, res) => {
   res.json({ running: asks.has(slug), activity: asks.get(slug)?.activity ?? null, messages: chat(slug).messages });
 });
 
-const askSystem = (slug: string) =>
-  [
-    `You are working on ONE reel: projects/${slug} (slug "${slug}"). Unless she clearly names another reel, every request is about this one.`,
-    'She is typing in the chat box on the Reel Studio editor page and sees the preview update live when edit.json changes.',
-    'She may be changing the reel on the page at the same time: re-read edit.json right before every change, and prefer small Edit changes over Write.',
-    'Never delete a reel, a picture or a video; if she asks, tell her to use the delete button on the page.',
-    'Reply in 1 to 3 short sentences in the language she wrote in. Say what you changed in plain words. No code, no file names.',
-    'If her request is unclear, make your best sensible guess for small things, or ask ONE short question for big things.',
-    'If edit.json has "format": "long", it is a long YouTube video, not a reel: use the yt-long skill.',
+const askSystem = (slug: string) => {
+  const b = brandOf();
+  const who = b.name || 'the user';
+  return [
+    `You are working on ONE reel: projects/${slug} (slug "${slug}"). Unless ${who} clearly names another reel, every request is about this one.`,
+    `${who} is typing in the chat box on the Reel Studio editor page and sees the preview update live when edit.json changes.`,
+    'They may be changing the reel on the page at the same time: re-read edit.json right before every change, and prefer small Edit changes over Write.',
+    'Never delete a reel, a picture or a video; if asked, say to use the delete button on the page.',
+    `Reply in 1 to 3 short sentences in the language they wrote in (default ${b.language === 'en' ? 'English' : 'Polish'}). Say what you changed in plain words. No code, no file names.`,
+    'If the request is unclear, make your best sensible guess for small things, or ask ONE short question for big things.',
+    'If edit.json has "format": "long", it is a long YouTube video, not a reel: use the yt-long skill. If it has "format": "story", it is a video from text: use the reel-story skill.',
   ].join(' ');
+};
 
 export const askArgs = (slug: string, prompt: string, resume?: string) => {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--allowedTools', ...ALLOWED_TOOLS, '--disallowedTools', ...DISALLOWED_TOOLS, '--append-system-prompt', askSystem(slug)];
@@ -1350,6 +1380,49 @@ const startVideoCheck = async (slug: string, video: string, props: ReelProps) =>
 const CHECK_ASK = 'Check my finished video / Sprawdź mój gotowy film';
 
 // Claude checks every new Instagram video (on unless she turns it off).
+// Who uses this copy: shown on the page, used by new reels and the videos. done=false until the first-start setup.
+const DEFAULT_BRAND: BrandSettings = { name: '', language: 'pl', use: 'both', done: false };
+const brandOf = (): BrandSettings => ({ ...DEFAULT_BRAND, ...(readJson<{ brand?: Partial<BrandSettings> }>(SETTINGS, {}).brand ?? {}) });
+app.get('/api/settings/brand', (_req, res) => res.json(brandOf()));
+app.put('/api/settings/brand', (req, res) => {
+  const b = req.body ?? {};
+  const next: BrandSettings = {
+    name: String(b.name ?? '').trim().slice(0, 80),
+    handle: b.handle ? String(b.handle).trim().replace(/^@/, '').slice(0, 60) : undefined,
+    website: b.website ? String(b.website).trim().slice(0, 200) : undefined,
+    language: b.language === 'en' ? 'en' : 'pl',
+    use: ['creator', 'product', 'both'].includes(b.use) ? b.use : 'both',
+    accent: /^#[0-9a-f]{6}$/i.test(String(b.accent ?? '')) ? String(b.accent) : undefined,
+    logo: b.logo && listFiles(BOARD, IMAGE).includes(String(b.logo)) ? String(b.logo) : undefined,
+    done: b.done === true,
+  };
+  writeJson(SETTINGS, { ...readJson<Record<string, unknown>>(SETTINGS, {}), brand: next });
+  res.json(next);
+});
+
+// Is Claude Code there? Version from `claude --version`; logged in = a credentials file exists (best effort).
+app.get('/api/settings/claude', (_req, res) => {
+  let version: string | null = null;
+  try {
+    version = execFileSync(CLAUDE_BIN, ['--version'], { encoding: 'utf8', timeout: 15_000 }).trim().split('\n')[0].replace(/\s*\(.*\)\s*$/, '') || null;
+  } catch {
+    version = null;
+  }
+  const home = process.env.HOME ?? '';
+  const creds = [path.join(home, '.claude', '.credentials.json'), path.join(home, '.claude.json')].some((p) => fs.existsSync(p));
+  res.json({ installed: version !== null, version, loggedIn: version === null ? null : creds ? true : null });
+});
+// The licence key is only stored for now; checking it comes with the shop.
+app.get('/api/settings/licence', (_req, res) => {
+  const key = readJson<{ licence?: string }>(SETTINGS, {}).licence ?? null;
+  res.json({ key, status: key ? 'saved' : 'none' });
+});
+app.put('/api/settings/licence', (req, res) => {
+  const key = String(req.body?.key ?? '').trim().slice(0, 120) || null;
+  writeJson(SETTINGS, { ...readJson<Record<string, unknown>>(SETTINGS, {}), licence: key ?? undefined });
+  res.json({ key, status: key ? 'saved' : 'none' });
+});
+
 app.get('/api/settings/autocheck', (_req, res) => {
   res.json({ autoCheck: settings().autoCheck !== false });
 });
@@ -1442,7 +1515,7 @@ const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried
       writeChat(slug, c);
       const before = c.messages.slice(0, -1).filter((m) => m.role !== 'error').slice(-6);
       const context = before.length
-        ? `Earlier in this chat (for context):\n${before.map((m) => `${m.role === 'user' ? 'Paulina' : 'Claude'}: ${m.text}`).join('\n')}\n\nHer new message:\n`
+        ? `Earlier in this chat (for context):\n${before.map((m) => `${m.role === 'user' ? brandOf().name || 'User' : 'Claude'}: ${m.text}`).join('\n')}\n\nHer new message:\n`
         : '';
       startAsk(slug, context + prompt, { retried: true });
       return;
@@ -1496,6 +1569,338 @@ app.post('/api/projects/:slug/ask/stop', (req, res) => {
 });
 
 // "New conversation": forget the chat and the Claude session for this reel (the reel itself stays).
+// ---- Video from text ("Film z tekstu") ----
+// Claude writes the script (her subscription, like the Ask box). The voice is her own recording or
+// the free computer voice (tools/tts.py in its own .venv-tts, Chatterbox, MIT). Then the normal
+// analysis runs with normalize --story, and Claude plans the scenes once.
+const TTS_PYTHON = process.env.REEL_TTS_PYTHON ?? path.join(ROOT, '.venv-tts', 'bin', 'python');
+const VOICE_DIR = path.join(ROOT, 'voice'); // her voice sample + the last preview line
+const SCRIPT_LANGS = new Set(['pl', 'en']);
+const readText = (p: string) => {
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch {
+    return '';
+  }
+};
+const voiceSample = () => (fs.existsSync(path.join(VOICE_DIR, 'sample.wav')) ? path.join(VOICE_DIR, 'sample.wav') : null);
+// The python that creates .venv-tts: Homebrew's 3.12 on her Mac (as install.sh uses), else python3.
+const SYS_PYTHON =
+  process.env.REEL_SYS_PYTHON ?? ['/opt/homebrew/bin/python3.12', '/usr/local/bin/python3.12'].find((p) => fs.existsSync(p)) ?? 'python3';
+
+// The voice model needs about 4.7 GB of RAM: one voice job at a time, and never while a video renders.
+let ttsChain: Promise<unknown> = Promise.resolve();
+const anyRenderRunning = () => [...renders.values()].some((r) => r.running);
+const withVoice = <T,>(fn: () => Promise<T>): Promise<T> => {
+  const run = async () => {
+    while (anyRenderRunning()) await new Promise((r) => setTimeout(r, 3000));
+    return fn();
+  };
+  const next = ttsChain.then(run, run);
+  ttsChain = next.catch(() => undefined);
+  return next;
+};
+
+let ttsKnown: { at: number; ready: boolean } | null = null;
+const ttsReady = () => {
+  if (ttsKnown && Date.now() - ttsKnown.at < 15_000) return ttsKnown.ready;
+  let ready = false;
+  if (fs.existsSync(TTS_PYTHON)) {
+    try {
+      const out = execFileSync(TTS_PYTHON, [path.join(ROOT, 'tools', 'tts.py'), '--check'], { cwd: ROOT, encoding: 'utf8', timeout: 30_000 });
+      ready = out.split('\n').some((l) => {
+        try {
+          return JSON.parse(l).ready === true;
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      ready = false;
+    }
+  }
+  ttsKnown = { at: Date.now(), ready };
+  return ready;
+};
+
+const ttsSetup: { installing: boolean; progress: number; error?: string } = { installing: false, progress: 0 };
+const startTtsSetup = () => {
+  if (ttsSetup.installing) return;
+  Object.assign(ttsSetup, { installing: true, progress: 0, error: undefined });
+  const p = track(spawn(SYS_PYTHON, [path.join(ROOT, 'tools', 'tts_setup.py')], { cwd: ROOT, env: process.env, detached: true }));
+  let buf = '';
+  let err = '';
+  let lastError = '';
+  p.stdout.on('data', (d: Buffer) => {
+    buf += d.toString();
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line);
+        if (typeof m.progress === 'number') ttsSetup.progress = Math.max(ttsSetup.progress, Math.min(0.99, m.progress));
+        if (m.error) lastError = String(m.error);
+      } catch {
+        /* not a progress line */
+      }
+    }
+  });
+  p.stderr.on('data', (d: Buffer) => (err = (err + d.toString()).slice(-3000)));
+  const done = (code: number | null, e?: Error) => {
+    ttsKnown = null;
+    ttsSetup.installing = false;
+    if (code === 0) ttsSetup.progress = 1;
+    else {
+      ttsSetup.error = lastError || e?.message || `setup failed (exit ${code})`;
+      console.error('tts setup failed:', ttsSetup.error, err.slice(-800));
+    }
+  };
+  p.on('error', (e) => done(null, e));
+  p.on('close', (code) => done(code));
+};
+
+// One short claude -p turn with no tools; returns the text answer.
+const claudeOnce = (prompt: string, timeoutMs = 150_000) =>
+  new Promise<string>((resolve, reject) => {
+    const env = { ...process.env };
+    delete env.ANTHROPIC_API_KEY; // always her subscription, never API billing
+    const p = track(spawn(CLAUDE_BIN, ['-p', prompt, '--output-format', 'json', '--max-turns', '1', '--disallowedTools', 'Bash', 'Edit', 'Write', 'Read', 'WebFetch', 'WebSearch', 'Task'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] }));
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => p.kill('SIGTERM'), timeoutMs);
+    p.stdout?.on('data', (d: Buffer) => (out += d.toString()));
+    p.stderr?.on('data', (d: Buffer) => (err = (err + d.toString()).slice(-2000)));
+    p.on('error', (e) => {
+      clearTimeout(timer);
+      reject(new ToolError(`Claude could not start: ${e.message}`, 'tool_missing'));
+    });
+    p.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        const r = JSON.parse(out);
+        if (r.is_error || typeof r.result !== 'string') throw new Error(r.result || 'no answer');
+        resolve(r.result);
+      } catch (e) {
+        reject(new Error(`Claude did not answer (exit ${code}): ${(e as Error).message} ${err.slice(-300)}`));
+      }
+    });
+  });
+
+type ProductInfo = { name?: string; what?: string; audience?: string; screenshots?: string[] };
+const scriptPrompt = (topic: string, language: string, seconds: number, mode: 'creator' | 'product', product: ProductInfo) => {
+  const words = Math.round(seconds * 2.4);
+  const voice = readText(path.join(ROOT, 'instagram', 'voice.md')).slice(0, 3000);
+  const brand = readText(path.join(ROOT, 'brand.md')).slice(0, 2000);
+  const who = brandOf();
+  const pl = language === 'pl';
+  const opening =
+    mode === 'product'
+      ? `Write the spoken script for one short vertical video that presents a product. Product: "${product.name ?? topic}". What it does: ${product.what ?? '(not given)'}. For whom: ${product.audience ?? '(not given)'}. Topic or angle of this video: "${topic}". The video shows real screenshots${product.screenshots?.length ? ` (${product.screenshots.join(', ')})` : ''}: write so that a sentence can go with a screenshot ("you open...", "you type...", "one click and..."). Name the one problem it solves, show how in 2 or 3 steps, give one concrete result (a number if true), and end with where to get it.`
+      : `Write the spoken script for one Instagram reel by ${who.name ? `${who.name}, a creator` : 'a creator'}. Topic: "${topic}".`;
+  return [
+    opening,
+    `Language: ${pl ? 'Polish (natural spoken Polish, informal "Wy"/"Ty" to the audience, correct grammar)' : 'English'}. Length: about ${words} words (${seconds} seconds read aloud).`,
+    `Rules: the first sentence is the hook (stops the scroll, max 10 words). Short sentences, max 14 words each, one idea per sentence. Concrete ${mode === 'product' ? 'and honest, no hype words like "revolutionary"' : 'advice'}, no filler, no clichés. When you give a list, start the sentences with "Pierwszy:", "Drugi:", "Trzeci:" (English: "First:", "Second:", "Third:"). Numbers as digits. End with one short call to action (save, follow or comment). No emoji, no hashtags, no headings, no stage directions, no quotes around the text.`,
+    voice ? `The creator's own voice and style notes (follow them):\n${voice}` : '',
+    brand ? `The creator's lasting wishes for all videos:\n${brand}` : '',
+    'Answer with ONLY a JSON object, nothing else: {"title": "<short title for the project, max 6 words>", "script": "<the script, sentences separated by spaces, paragraphs by \\n>"}',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+app.post('/api/story/script', async (req, res) => {
+  const topic = String(req.body?.topic ?? '').trim().slice(0, 500);
+  const language = SCRIPT_LANGS.has(req.body?.language) ? String(req.body.language) : 'pl';
+  const seconds = [30, 45, 60].includes(Number(req.body?.seconds)) ? Number(req.body.seconds) : 45;
+  const mode = req.body?.mode === 'product' ? 'product' : 'creator';
+  const pr = req.body?.product ?? {};
+  const product: ProductInfo = {
+    name: pr.name ? String(pr.name).slice(0, 80) : undefined,
+    what: pr.what ? String(pr.what).slice(0, 300) : undefined,
+    audience: pr.audience ? String(pr.audience).slice(0, 200) : undefined,
+    screenshots: Array.isArray(pr.screenshots) ? pr.screenshots.map(String).slice(0, 8) : undefined,
+  };
+  if (!topic) {
+    res.status(400).json({ error: 'Write a topic first' });
+    return;
+  }
+  try {
+    const text = await claudeOnce(scriptPrompt(topic, language, seconds, mode, product));
+    const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+    const r = JSON.parse(json) as { title?: string; script?: string };
+    if (!r.script?.trim()) throw new Error('empty script');
+    res.json({ title: String(r.title ?? topic).trim().slice(0, 80), script: r.script.trim() });
+  } catch (e) {
+    console.error('story script failed:', (e as Error).message);
+    const m = mapError((e as Error).message, 'unknown');
+    res.status(502).json({ code: m.code, error: m.message });
+  }
+});
+
+app.get('/api/story/voice', (_req, res) => {
+  res.json({ ready: ttsReady(), installing: ttsSetup.installing, progress: ttsSetup.progress, error: ttsSetup.error, sample: !!voiceSample(), sizeGb: 4 });
+});
+
+app.post('/api/story/voice/install', (_req, res) => {
+  if (!ttsReady()) startTtsSetup();
+  res.json({ ok: true });
+});
+
+// Her voice sample (5 to 30 s), so the computer voice sounds like her. Stored as voice/sample.wav.
+app.put('/api/story/voice/sample', toTemp.single('audio'), async (req, res) => {
+  const f = req.file;
+  if (!f) {
+    res.status(400).json({ code: 'bad_file', error: 'No recording in the upload' });
+    return;
+  }
+  try {
+    fs.mkdirSync(VOICE_DIR, { recursive: true });
+    await new Promise<void>((resolve, reject) => {
+      const p = track(spawn('ffmpeg', ['-v', 'error', '-y', '-i', f.path, '-t', '30', '-ac', '1', '-ar', '24000', path.join(VOICE_DIR, 'sample.wav')]));
+      p.on('error', reject);
+      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error('the recording could not be read'))));
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ code: 'bad_file', error: (e as Error).message });
+  } finally {
+    fs.rmSync(f.path, { force: true });
+  }
+});
+
+app.delete('/api/story/voice/sample', (_req, res) => {
+  fs.rmSync(path.join(VOICE_DIR, 'sample.wav'), { force: true });
+  res.json({ ok: true });
+});
+
+// One line in the computer voice, to hear it before making a whole video.
+let previewBusy = false;
+app.post('/api/story/voice/preview', async (req, res) => {
+  const text = String(req.body?.text ?? '').trim().slice(0, 300);
+  const language = SCRIPT_LANGS.has(req.body?.language) ? String(req.body.language) : 'pl';
+  if (!text) {
+    res.status(400).json({ error: 'No text' });
+    return;
+  }
+  if (!ttsReady()) {
+    res.status(409).json({ code: 'tool_missing', error: 'The computer voice is not installed yet' });
+    return;
+  }
+  if (previewBusy) {
+    res.status(409).json({ code: 'busy', error: 'Still making the last preview' });
+    return;
+  }
+  previewBusy = true;
+  try {
+    fs.mkdirSync(VOICE_DIR, { recursive: true });
+    const out = path.join(VOICE_DIR, 'preview.wav');
+    const sample = req.body?.useSample ? voiceSample() : null;
+    await withVoice(() => new Promise<void>((resolve, reject) => {
+      const p = track(spawn(TTS_PYTHON, [path.join(ROOT, 'tools', 'tts.py'), '--text', text, '--out', out, '--lang', language, ...(sample ? ['--sample', sample] : [])], { cwd: ROOT, env: process.env }));
+      let err = '';
+      // Read BOTH pipes: torch and the model loader print a lot on stderr, and a full pipe blocks the tool.
+      const keep = (d: Buffer) => (err = (err + d.toString()).slice(-1500));
+      p.stdout.on('data', keep);
+      p.stderr.on('data', keep);
+      const timer = setTimeout(() => p.kill('SIGTERM'), 5 * 60_000);
+      p.on('error', (e) => {
+        clearTimeout(timer);
+        reject(e);
+      });
+      p.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(`voice failed: ${err.slice(-300)}`));
+      });
+    }));
+    res.json({ url: `/api/story/voice/preview.wav?t=${Date.now()}` });
+  } catch (e) {
+    res.status(500).json({ code: 'unknown', error: (e as Error).message });
+  } finally {
+    previewBusy = false;
+  }
+});
+app.get('/api/story/voice/preview.wav', (_req, res) => {
+  const p = path.join(VOICE_DIR, 'preview.wav');
+  if (!fs.existsSync(p)) {
+    res.status(404).end();
+    return;
+  }
+  res.type('audio/wav').sendFile(p);
+});
+
+// Make a story project: fields title, script, language, voice ('own' | 'ai'), background; file "audio"
+// (her recording) when voice = 'own'.
+app.post('/api/projects/story', toTemp.single('audio'), (req, res) => {
+  const f = req.file;
+  const drop = () => f && fs.rmSync(f.path, { force: true });
+  const title = String(req.body?.title ?? '').trim().slice(0, 80) || 'Film z tekstu';
+  const script = String(req.body?.script ?? '').trim().slice(0, 6000);
+  const language = SCRIPT_LANGS.has(req.body?.language) ? String(req.body.language) : 'pl';
+  const voice = req.body?.voice === 'ai' ? 'ai' : 'own';
+  const background = ['cream', 'ink', 'accent'].includes(req.body?.background) ? req.body.background : 'cream';
+  const mode = req.body?.mode === 'product' ? 'product' : 'creator';
+  if (!script) {
+    drop();
+    res.status(400).json({ code: 'bad_file', error: 'The script is empty' });
+    return;
+  }
+  if (voice === 'own' && !f) {
+    res.status(400).json({ code: 'bad_file', error: 'No recording in the upload' });
+    return;
+  }
+  if (voice === 'ai' && !ttsReady()) {
+    drop();
+    res.status(409).json({ code: 'tool_missing', error: 'The computer voice is not installed yet' });
+    return;
+  }
+  const slug = slugify(`${title}.story`);
+  try {
+    fs.mkdirSync(dir(slug));
+    fs.writeFileSync(file(slug, 'script.txt'), script);
+    writeJson(file(slug, 'meta.json'), { title, createdAt: new Date().toISOString(), format: 'story', story: { voice, background, language, mode } });
+    if (f) {
+      const ext = path.extname(f.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '') || (f.mimetype.includes('webm') ? '.webm' : f.mimetype.includes('mp4') ? '.m4a' : '.wav');
+      fs.renameSync(f.path, file(slug, `source${ext}`));
+    }
+  } catch (e) {
+    drop();
+    fs.rmSync(dir(slug), { recursive: true, force: true });
+    res.status(500).json({ code: 'unknown', error: (e as Error).message });
+    return;
+  }
+  setStatus(slug, { step: 'queued', progress: 0 });
+  analyse(slug);
+  res.json({ slug });
+});
+
+// Claude plans the scenes (key words, lists, a photo from her board) once the first edit exists.
+// Runs in the reel's Ask chat, so she sees what Claude does and can ask for changes there.
+const planStory = (slug: string) => {
+  if (asks.has(slug)) return false;
+  setMeta(slug, { storyPlanned: true });
+  const st = meta(slug).story;
+  const pl = (st?.language ?? 'pl') === 'pl';
+  const product = st?.mode === 'product';
+  const text = pl ? (product ? 'Ułóż sceny do tego filmu o produkcie.' : 'Ułóż sceny do tego filmu z tekstu.') : product ? 'Plan the scenes of this product video.' : 'Plan the scenes of this video from text.';
+  pushChat(slug, { role: 'user', text });
+  startAsk(slug, `${text}\n\n(Use the /reel-story skill${product ? ', product video rules: screen, click, type, logos, price with the real board screenshots' : ''}. Do not render the video.)`, { resume: chat(slug).sessionId });
+  return true;
+};
+app.post('/api/projects/:slug/story/plan', (req, res) => {
+  const slug = req.params.slug;
+  if (!isStoryProject(slug)) {
+    res.status(409).json({ code: 'not_story', error: 'This is not a video from text' });
+    return;
+  }
+  if (!planStory(slug)) {
+    res.status(409).json({ code: 'busy', error: 'Claude is still working on your last request' });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 app.delete('/api/projects/:slug/ask', (req, res) => {
   if (asks.has(req.params.slug)) {
     res.status(409).json({ code: 'busy', error: 'Claude is still working' });

@@ -7,7 +7,7 @@ import { NEEDS_CUTOUT } from '../../src/shared/types';
 import { outputDuration, outputWords } from '../../src/shared/time';
 import { api, HttpError, type LookPatch, type LookStillReq, type ProjectDetail } from './api';
 import { fmt, LOOK_CARDS, useT, type StrKey } from './i18n';
-import { go, LangSwitch } from './App';
+import { go, TopRight } from './App';
 import { Check } from './ui';
 
 type Tab = 'palettes' | 'fonts' | 'captions' | 'effects' | 'transitions' | 'notes';
@@ -293,7 +293,7 @@ export function LookBuilder({ slug }: { slug: string }) {
           <span className="brand-mark">R</span>
           <span className="brand-name">{t('lookTitle')}</span>
         </div>
-        <LangSwitch />
+        <TopRight />
       </header>
 
       <main className="look-main">

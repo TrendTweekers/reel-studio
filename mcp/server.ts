@@ -18,6 +18,7 @@ import { checkEdit, type Problem } from '../src/shared/check';
 import { IG_PROMPTS } from '../src/shared/igPrompts';
 import { checkVideo } from '../server/videocheck';
 import { chapterList, formatTime, fullDescription, isLong, outputChapters } from '../src/shared/long';
+import { isStory } from '../src/shared/story';
 import { outputDuration, outputToSource, outputWords, sourceToOutput, totalFrames } from '../src/shared/time';
 import {
   FPS,
@@ -341,16 +342,27 @@ const describeFrame = (e: Edit, words: Word[], t: number) => {
 };
 
 // ---------- server ----------
-const INSTRUCTIONS = `Reel Studio: Paulina Lipska's own reel editor on her Mac. These tools change her reels.
-WHO: Paulina is a Polish fashion stylist and ebook author (@paulinalipska). Style "nowoczesna klasyka z twistem": elegant, editorial, calm. Cream, black and one soft accent. Serif headlines. Never loud or cheap.
-TALK: answer in the language she writes in (Polish: informal "Ty"). Short sentences, plain words. No code, file names, JSON or technical words unless she asks. Say what you changed in her words ("I added your coat photo when you say płaszcz").
-START: call get_preferences once at the start of a conversation and follow it. When she says something that should hold for ALL future reels, call remember_preference and tell her "Zapamiętam to." A wish for one reel only goes into that reel (update_reel), not into her preferences.
-WORK: if she does not name a reel, use the newest from list_reels. Find words with get_words (search) before placing anything; never guess a time. All times in a reel are SOURCE seconds (seconds into her original video); tools that take a word index do the math for you. After every change call check_reel and fix every problem it lists. To see your result, call show_reel_frame at the moment you changed and look at the picture. She sees changes live on the editor page (offer open_reel_studio with the reel).
-TASTE: fewer, better effects. About one effect every 2 to 4 seconds is plenty; pictures and labels on stressed words, not on every word; keep her face free; one idea per effect. When unsure, do less and ask.
-PICTURES AND MUSIC: use only her own board pictures (list_board) and her own music (list_music). If she asks for a picture from the internet or Pinterest, tell her it can bring a copyright claim and ask her to add her own picture on the page.
-NEVER delete a reel, a picture or a video file (there are no tools for it; she does that on the page herself). NEVER post anything to Instagram or TikTok; she posts herself.
+// Who uses this copy of Reel Studio (settings.json "brand", set on the page's first start).
+const brandNow = () => {
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings.json'), 'utf8')).brand ?? {};
+    return { name: String(b.name ?? ''), handle: b.handle ? `@${b.handle}` : '', language: b.language === 'en' ? 'en' : 'pl', use: String(b.use ?? 'both') };
+  } catch {
+    return { name: '', handle: '', language: 'pl', use: 'both' };
+  }
+};
+const B = brandNow();
+const INSTRUCTIONS = `Reel Studio: ${B.name ? `${B.name}'s` : "the user's"} own video editor on their Mac. These tools change their reels and videos.
+WHO: ${B.name || 'the user'}${B.handle ? ` (${B.handle})` : ''}, ${B.use === 'product' ? 'promoting a product, app or website with short videos' : B.use === 'creator' ? 'a creator who films short videos' : 'a creator who films short videos and also promotes a product'}. Who they are and what they sound like: get_preferences (brand.md) and instagram/voice.md. Default look: elegant, editorial, calm. Cream, black and one soft accent. Serif headlines. Never loud or cheap.
+TALK: answer in ${B.language === 'en' ? 'English' : 'Polish (informal "Ty")'}, or the language the user writes in. Short sentences, plain words. No code, file names, JSON or technical words unless asked. Say what you changed in plain words ("I added your coat photo when you say płaszcz").
+START: call get_preferences once at the start of a conversation and follow it. When the user says something that should hold for ALL future reels, call remember_preference and say "Zapamiętam to." (or "I will remember") A wish for one reel only goes into that reel (update_reel), not into the lasting preferences.
+WORK: if the user does not name a reel, use the newest from list_reels. Find words with get_words (search) before placing anything; never guess a time. All times in a reel are SOURCE seconds (seconds into the original video); tools that take a word index do the math for you. After every change call check_reel and fix every problem it lists. To see your result, call show_reel_frame at the moment you changed and look at the picture. The user sees changes live on the editor page (offer open_reel_studio with the reel).
+TASTE: fewer, better effects. About one effect every 2 to 4 seconds is plenty; pictures and labels on stressed words, not on every word; keep the face free; one idea per effect. When unsure, do less and ask.
+PICTURES AND MUSIC: use only the user's own board pictures (list_board) and their own music (list_music). If the user asks for a picture from the internet or Pinterest, say it can bring a copyright claim and ask them to add their own picture on the page.
+NEVER delete a reel, a picture or a video file (there are no tools for it; the user does that on the page). NEVER post anything to Instagram or TikTok; the user posts.
 AFTER A NEW REEL: offer to proofread the subtitles (get_words, then fix_word for misheard brand and fashion words).
-MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then call check_video, look at the picture and tell her if it is ready to post or what you would fix; then show_in_finder and say she can AirDrop it to her phone.
+MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then call check_video, look at the picture and say if it is ready to post or what you would fix; then show_in_finder and say she can AirDrop it to her phone.
+VIDEO FROM TEXT (no camera): make_story_video starts one with the computer voice from a script you write (the user's OK first); a reel with format "story" (get_reel says so) has scenes instead of footage, change them with set_story_scenes. The user's own voice sounds best: they record it on the page under "Film z tekstu".
 YOUTUBE (long videos, 20 to 40 min): a reel with format "long" (get_reel says so) is a YouTube video. It shows only picture, label and zoom effects; no hook, end card or Instagram caption. Use set_youtube for chapters (source seconds; first at 0, at least 3, 10 s or more apart, best every 2 to 5 minutes at a real topic change), title (max 100 chars, the search phrase first), description (2 to 4 short paragraphs in her voice, without the chapter list; it is added for you), name tag and switches. Read the video first with get_transcript. youtube_text gives the finished title + description to copy. make_thumbnail makes the 1280x720 thumbnail. make_clip on a long video makes a vertical Short (max 3 min) as a new reel; it is ready after a few minutes of analysis. make_video on a long video takes 20 to 40 minutes: start it, then use video_status.
 INSTAGRAM (before filming, after posting): for a reel idea, script or hooks, a caption check, a week plan, replies, DMs, carousels, stories or a profile check, call instagram_guide with the job and follow it. These tools work without Reel Studio open.
 If a tool says Reel Studio is not open, call open_reel_studio.`;
@@ -451,6 +463,11 @@ tool(
     }
     const L: string[] = [];
     L.push(`Reel ${slug}: "${e.title}" (language ${e.language}), state ${p.status.step}${p.parent ? `, clip of ${p.parent}` : ''}`);
+    if (isStory(e) && e.story) {
+      L.push(`FORMAT: video from text (no camera; ${e.story.voice === 'ai' ? 'computer voice' : 'her recorded voice'}, background ${e.story.background}). Scenes are drawn instead of footage; change them with set_story_scenes (reel-story rules). Effects that need her on camera are ignored.`);
+      L.push(`Scenes (source s): ${e.story.scenes.map((sc) => `${sc.at} s ${sc.kind}${sc.text ? ` "${sc.text.replace(/\n/g, ' / ')}"` : ''}${sc.items?.length ? ` [${sc.items.join(' | ')}]` : ''}${sc.image ? ` image ${sc.image}` : ''}`).join('; ') || 'none'}`);
+      L.push(`Script:\n${e.story.script}`);
+    }
     if (isLong(e)) {
       const Lg = e.long;
       L.push(`FORMAT: long YouTube video (${e.source.width}x${e.source.height}). Only picture, label and zoom effects show. Use set_youtube / youtube_text / make_thumbnail.`);
@@ -825,6 +842,62 @@ tool(
   },
 );
 
+// ----- Video from text (story) -----
+const sceneShape = z.object({
+  at: z.number().min(0).describe('source seconds of the first spoken word of this scene (get_words)'),
+  kind: z.enum(['title', 'words', 'list', 'photo', 'number', 'quote', 'compare', 'reels', 'screen', 'click', 'type', 'logos', 'price']),
+  text: z.string().max(200).optional(),
+  items: z.array(z.string().max(80)).max(6).optional(),
+  image: z.string().optional().describe('photo, screen, click: board picture file (list_board)'),
+  reels: z.array(z.string()).optional().describe('reels: slugs with a finished video (list_reels); leave out for her newest'),
+  frame: z.enum(['phone', 'browser', 'plain']).optional().describe('screen, click: how the screenshot is framed (default by its shape)'),
+  point: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional().describe('click: where on the picture, 0..1 from the top-left'),
+});
+tool(
+  'make_story_video',
+  `Make a new "video from text" (no camera): the free computer voice reads the script, and animated scenes plus subtitles are drawn. Write the script yourself first, in her voice (get_preferences, instagram_guide voice): first sentence = hook (max 10 words), short sentences (max 14 words), lists as "Pierwszy:/Drugi:/Trzeci:", numbers as digits, one short call to action at the end, about 2.4 words per second (45 s = about 110 words). No emoji or hashtags. Show her the script and get her OK before you call this. Her own recorded voice sounds best: for that she uses "Film z tekstu" on the page (it has a teleprompter). The computer voice must be installed once on the page. It takes a few minutes; then Claude plans the scenes automatically. Use video_status / get_reel afterwards.`,
+  {
+    title: z.string().min(1).max(80),
+    script: z.string().min(20).max(6000),
+    language: z.enum(['pl', 'en']).default('pl'),
+    background: z.enum(['cream', 'ink', 'accent']).default('cream'),
+  },
+  WRITE,
+  async ({ title, script, language, background }) => {
+    const v = await api<{ ready: boolean; installing: boolean }>('GET', '/api/story/voice');
+    if (!v.ready) throw new UserError(v.installing ? 'The computer voice is still downloading. Try again in a few minutes.' : 'The computer voice is not installed yet. On the page: Film z tekstu, then Głos komputera, then download it once (about 4 GB).');
+    const form = new FormData();
+    for (const [k, val] of Object.entries({ title, script, language, background, voice: 'ai' })) form.append(k, val);
+    let res: Response;
+    try {
+      res = await fetch(`${ORIGIN}/api/projects/story`, { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
+    } catch {
+      throw new NotOpen(NOT_OPEN);
+    }
+    const j = (await res.json().catch(() => ({}))) as { slug?: string; error?: string };
+    if (!res.ok || !j.slug) throw new UserError(j.error ?? `Could not start (HTTP ${res.status})`);
+    return `Started "${title}" as ${j.slug}. The voice and the first edit take a few minutes; then Claude plans the scenes. She can watch it on the page.`;
+  },
+);
+tool(
+  'set_story_scenes',
+  'Video from text only: replace all scenes (and optionally the background). Product videos (meta mode product) use screen/click/type/logos/price with real board screenshots. Follow the reel-story rules: one scene per idea every 2 to 5 s, at = source seconds of the first spoken word of the idea (get_words), the first at the first word; words = 2 or 3 short lines joined with \n (key words, not the sentence); list items max 5 words; number items[0] = the number; compare ONLY for wrong vs right, items = [no side, yes side] (two equal options are words or list, not compare); photo only with a real board picture; vary the kinds.',
+  { slug: slugArg, scenes: z.array(sceneShape).min(1).max(40), background: z.enum(['cream', 'ink', 'accent']).optional() },
+  WRITE,
+  async ({ slug, scenes, background }) => {
+    const p = await getProject(slug);
+    if (!p.edit || !isStory(p.edit)) throw new UserError('This is not a video from text.');
+    const board = await listFiles('board');
+    const missing = scenes.filter((sc) => ['photo', 'screen', 'click'].includes(sc.kind) && (!sc.image || !board.includes(sc.image)));
+    if (missing.length) throw new UserError(`These photo scenes have no real board picture: ${missing.map((m) => `${m.at} s "${m.image ?? ''}"`).join(', ')}. Pictures: ${board.join(', ') || 'none'}.`);
+    await mutate(slug, (e) => ({
+      ...e,
+      story: { ...e.story!, ...(background ? { background } : {}), scenes: [...scenes].sort((a, b) => a.at - b.at).map((sc) => ({ id: shortId(), ...sc, at: r2(sc.at) })) },
+    }));
+    return afterChange(slug, `Scenes set: ${scenes.length}.`);
+  },
+);
+
 // ----- YouTube (long videos) -----
 const longOnly = async (slug: string) => {
   const p = await getProject(slug);
@@ -1082,7 +1155,7 @@ tool(
     try {
       cur = fs.readFileSync(BRAND, 'utf8');
     } catch {
-      cur = "# Paulina's lasting preferences\n";
+      cur = "# Lasting preferences\n";
     }
     if (cur.split('\n').some((l) => l.replace(/^- /, '').trim().toLowerCase() === line.toLowerCase())) return 'Already remembered.';
     fs.appendFileSync(BRAND, `${cur.endsWith('\n') || !cur ? '' : '\n'}- ${line}\n`);

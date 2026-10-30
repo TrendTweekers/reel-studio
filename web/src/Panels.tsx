@@ -74,7 +74,7 @@ function FontButtons<F extends string>({ fonts, value, onPick, sample, three }: 
   );
 }
 
-export function FontsPanel({ edit, change, long }: P & { long?: boolean }) {
+export function FontsPanel({ edit, change, long, story }: P & { long?: boolean; story?: boolean }) {
   const { t } = useT();
   const st = edit.style;
   const setStyle = (patch: Partial<Edit['style']>, key?: string) => change((e) => ({ ...e, style: { ...e.style, ...patch } }), key);
@@ -118,7 +118,7 @@ export function FontsPanel({ edit, change, long }: P & { long?: boolean }) {
       <Group label={t('position')}>
         <Chips
           value={st.subtitlePosition}
-          options={(['lower', 'middle', 'above-head'] as const).map((v) => ({ value: v, label: t(`pos_${v}` as StrKey) }))}
+          options={(story ? (['lower', 'middle'] as const) : (['lower', 'middle', 'above-head'] as const)).map((v) => ({ value: v, label: t(`pos_${v}` as StrKey) }))}
           onChange={(v) => setStyle({ subtitlePosition: v })}
         />
       </Group>
@@ -323,7 +323,7 @@ const VIBE_SWATCH: Record<Edit['style']['vibe'], string> = {
   editorial: 'linear-gradient(135deg,#1b1b1b,#6d6d6d 60%,#f6f1ea)',
 };
 
-export function VibePanel({ edit, change, slug, long }: P & { slug: string; long?: boolean }) {
+export function VibePanel({ edit, change, slug, long, story }: P & { slug: string; long?: boolean; story?: boolean }) {
   const { t, lang } = useT();
   const [measuring, setMeasuring] = useState(false);
   const [lightErr, setLightErr] = useState(false);
@@ -355,6 +355,8 @@ export function VibePanel({ edit, change, slug, long }: P & { slug: string; long
           </button>
         ))}
       </div>
+      {/* A video from text has no camera picture to fix. */}
+      {!story && (
       <div className="light-box">
         <div className="group-label">{t('lightFix')}</div>
         {light?.fix ? (
@@ -380,6 +382,7 @@ export function VibePanel({ edit, change, slug, long }: P & { slug: string; long
           </>
         )}
       </div>
+      )}
       {/* Grain and the progress bar are reel-only. */}
       {!long && (
         <div className="row gap">
