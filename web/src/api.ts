@@ -170,6 +170,7 @@ export const api = {
   claude: () => req<ClaudeState>('GET', '/api/settings/claude'),
   licence: () => req<LicenceState>('GET', '/api/settings/licence'),
   saveLicence: (key: string) => req<LicenceState>('PUT', '/api/settings/licence', { key }),
+  updateCheck: () => req<UpdateState>('GET', '/api/settings/update'),
   saveLook: (body: LookSaveReq) => req<{ ok: boolean; id: string; style: Edit['style']; toggles: Edit['toggles']; brandLines: string[] }>('POST', '/api/look', body),
 };
 
@@ -179,7 +180,8 @@ export type StoryMode = 'creator' | 'product';
 export type ProductInfo = { name: string; what: string; audience: string; screenshots: string[] };
 // null = the server could not tell.
 export type ClaudeState = { installed: boolean; version: string | null; loggedIn: boolean | null };
-export type LicenceState = { key: string | null; status: 'none' | 'saved' };
+export type LicenceState = { key: string | null; status: 'none' | 'saved' | 'valid' | 'invalid' | 'revoked' | 'limit' | 'down'; email?: string; checkedAt?: string; error?: string };
+export type UpdateState = { current: string; latest?: string; date?: string; notes?: string; available: boolean; reason?: string };
 export type VoiceState = { ready: boolean; installing: boolean; progress: number; error?: string; sample: boolean; sizeGb: number };
 
 export type LookPatch = { style?: Partial<Edit['style']>; hook?: Edit['hook']; toggles?: Partial<Edit['toggles']> };

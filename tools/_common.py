@@ -1,4 +1,4 @@
-"""Shared helpers for the Reel Studio analysis tools. Cross-platform (macOS arm64, Linux, Windows)."""
+"""Shared helpers for the Klipownia analysis tools. Cross-platform (macOS arm64, Linux, Windows)."""
 import glob
 import json
 import os

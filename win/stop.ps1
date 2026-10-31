@@ -1,4 +1,4 @@
-﻿# Stops Reel Studio (the background server on port 8787). -Quiet: no pause at the end (used by install.ps1).
+﻿# Stops Klipownia (the background server on port 8787). -Quiet: no pause at the end (used by install.ps1).
 param([switch]$Quiet)
 $Port = 8787
 if ($env:PORT) { $Port = [int]$env:PORT }  # same rule as start.ps1 and the server
@@ -13,9 +13,9 @@ foreach ($id in ($conns | Select-Object -ExpandProperty OwningProcess -Unique)) 
   }
 }
 if ($stopped) {
-  Write-Host 'Reel Studio jest zatrzymane. / Reel Studio is stopped.'
+  Write-Host 'Klipownia jest zatrzymana. / Klipownia is stopped.'
   Start-Sleep -Seconds 1  # let Windows release the files
 } else {
-  Write-Host 'Reel Studio nie było uruchomione. / Reel Studio was not running.'
+  Write-Host 'Klipownia nie była uruchomiona. / Klipownia was not running.'
 }
 if (-not $Quiet) { Start-Sleep -Seconds 2 }

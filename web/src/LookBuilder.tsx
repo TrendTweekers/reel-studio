@@ -290,7 +290,7 @@ export function LookBuilder({ slug }: { slug: string }) {
           ← {t('lookBackReel')}
         </button>
         <div className="brand">
-          <span className="brand-mark">R</span>
+          <span className="brand-mark">K</span>
           <span className="brand-name">{t('lookTitle')}</span>
         </div>
         <TopRight />

@@ -1,10 +1,10 @@
-﻿# Reel Studio installer for Windows 10 and 11 (64-bit Intel or AMD). Safe to run again: it only adds
+﻿# Klipownia installer for Windows 10 and 11 (64-bit Intel or AMD). Safe to run again: it only adds
 # what is missing. Normally get.ps1 runs it. By hand:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 # Test switches: -Root (other app folder), -SkipWinget (install nothing with winget), -ClaudeConfig
 # (write the Claude Desktop config to this file only), -NoShortcuts, -NoLogin.
 param(
-  [string]$Root = (Join-Path $env:USERPROFILE 'ReelStudio'),
+  [string]$Root = (Join-Path $env:USERPROFILE 'Klipownia'),
   [switch]$SkipWinget,
   [string]$ClaudeConfig,
   [switch]$NoShortcuts,
@@ -133,11 +133,11 @@ function Test-SamePath([string]$a, [string]$b) {
 # Her reels, pictures, music, styles and settings in an existing $Root are never touched.
 $Here = $PSScriptRoot
 if (-not (Test-SamePath $Here $Root)) {
-  Say "Kopiuję Reel Studio do $Root" "Copying Reel Studio to $Root"
+  Say "Kopiuję Klipownię do $Root" "Copying Klipownia to $Root"
   New-Item -ItemType Directory -Force -Path $Root | Out-Null
   $xd = @('.git', 'node_modules', '.venv', '.venv-tts', 'models', 'projects', 'board', 'styles', 'voice', 'logs', 'out', 'audit', '.incoming', 'instagram', (Join-Path 'assets' 'music'), (Join-Path 'web' 'dist')) |
     ForEach-Object { Join-Path $Here $_ }
-  $xf = @('.install-ok', '*.log')
+  $xf = @('.install-ok', '.version', '*.log')
   foreach ($keep in @('settings.json', 'brand.md', 'vocabulary.txt', 'keywords.md')) {
     if (Test-Path (Join-Path $Root $keep)) { $xf += (Join-Path $Here $keep) }
   }
@@ -161,20 +161,20 @@ Set-Location $Root
 # ---- Log everything to a file, and say what to do if it fails
 $LogDir = Join-Path $Root 'logs'
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
-$Log = Join-Path $LogDir 'ReelStudio-install.log'
+$Log = Join-Path $LogDir 'Klipownia-install.log'
 try { Start-Transcript -Path $Log -Append | Out-Null } catch { }
 $Total = [Diagnostics.Stopwatch]::StartNew()
 $ok = $false
 try {
-  Write-Host "=== Reel Studio install, $(Get-Date) ==="
+  Write-Host "=== Klipownia install, $(Get-Date) ==="
   Remove-Item (Join-Path $Root '.install-ok') -ErrorAction SilentlyContinue
 
-  # ---- Preflight: stop early with a clear message on a PC that cannot run Reel Studio
+  # ---- Preflight: stop early with a clear message on a PC that cannot run Klipownia
   $arch = $env:PROCESSOR_ARCHITEW6432
   if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
   if ($arch -ne 'AMD64') {
-    Stop-Install 'Ten komputer ma procesor ARM. Reel Studio potrzebuje komputera z procesorem Intel albo AMD (64-bit).' `
-      'This PC has an ARM processor. Reel Studio needs a 64-bit Intel or AMD PC.'
+    Stop-Install 'Ten komputer ma procesor ARM. Klipownia potrzebuje komputera z procesorem Intel albo AMD (64-bit).' `
+      'This PC has an ARM processor. Klipownia needs a 64-bit Intel or AMD PC.'
   }
   if ([Environment]::OSVersion.Version.Build -lt 17763) {
     Stop-Install 'Ten Windows jest za stary. Zaktualizuj Windows 10 (Ustawienia > Windows Update) i uruchom instalację jeszcze raz.' `
@@ -185,8 +185,8 @@ try {
   $drive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($Root).Substring(0, 1))
   $freeGb = [int][Math]::Floor($drive.Free / 1GB)
   if ($freeGb -lt $needGb) {
-    Stop-Install "Za mało miejsca na dysku: wolne $freeGb GB, Reel Studio potrzebuje $needGb GB. Opróżnij Kosz i usuń duże pliki, których nie potrzebujesz, potem uruchom instalację jeszcze raz." `
-      "Not enough free disk space: $freeGb GB free, Reel Studio needs $needGb GB. Empty the Recycle Bin and delete big files, then run the installer again."
+    Stop-Install "Za mało miejsca na dysku: wolne $freeGb GB, Klipownia potrzebuje $needGb GB. Opróżnij Kosz i usuń duże pliki, których nie potrzebujesz, potem uruchom instalację jeszcze raz." `
+      "Not enough free disk space: $freeGb GB free, Klipownia needs $needGb GB. Empty the Recycle Bin and delete big files, then run the installer again."
   }
   Update-SessionPath
 
@@ -209,7 +209,7 @@ try {
   if (-not $ff) { Stop-Install 'FFmpeg się nie zainstalował. Zamknij to okno i uruchom instalację jeszcze raz.' 'FFmpeg did not install. Close this window and run the installer again.' }
   Info "FFmpeg: $ff"
 
-  Step 2 'Zatrzymuję stary serwer Reel Studio (jeśli działa)' 'Stopping the old Reel Studio server (if it runs)'
+  Step 2 'Zatrzymuję stary serwer Klipowni (jeśli działa)' 'Stopping the old Klipownia server (if it runs)'
   # Windows locks files of a running server, so npm ci would fail.
   & (Join-Path $Root 'win\stop.ps1') -Quiet
 
@@ -221,7 +221,7 @@ try {
   Info 'Instaluję oficjalne umiejętności Remotion dla Claude (wiedza o wideo)...' 'Installing the official Remotion skills for Claude (video know-how)...'
   $skillsOk = Run $Npx @('-y', 'skills@1.7.4', 'add', 'remotion-dev/skills', '-a', 'claude-code', '-y', '--copy',
     '-s', 'remotion-best-practices', 'remotion-markup', 'remotion-captions', 'remotion-multimedia', 'remotion-render', 'remotion-docs') -AllowFail
-  if (-not $skillsOk) { Info 'Nie udało się teraz zainstalować umiejętności Remotion (brak internetu?). Reel Studio działa bez nich.' 'Could not install the Remotion skills now (no internet?). Reel Studio works without them.' }
+  if (-not $skillsOk) { Info 'Nie udało się teraz zainstalować umiejętności Remotion (brak internetu?). Klipownia działa bez nich.' 'Could not install the Remotion skills now (no internet?). Klipownia works without them.' }
 
   Step 4 'Narzędzia do analizy wideo (mowa na tekst, wykrywanie twarzy). Około 1,5 GB, poczekaj.' 'Video analysis tools (speech to text, face finder). About 1.5 GB. Please wait.'
   $VPy = Join-Path $Root '.venv\Scripts\python.exe'
@@ -234,7 +234,7 @@ try {
   Run $VPy @('-c', "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8', download_root='models')")
   Info 'Pobieram modele do wykrywania twarzy i sylwetki...' 'Downloading the face and person finder models...'
   $facesOk = Run $VPy @('-c', "import sys; sys.path.insert(0,'tools'); import _facedet, cutout, cover_frames; from _common import model_file; model_file(*_facedet.SHORT); model_file('selfie_multiclass_256x256.tflite', cutout.URL); model_file('selfie_segmenter.tflite', cutout.URL_BIN); model_file('face_landmarker.task', cover_frames.URL)") -AllowFail
-  if (-not $facesOk) { Info 'Nie udało się ich teraz pobrać. Reel Studio pobierze je, gdy będą pierwszy raz potrzebne.' 'Could not download them now. Reel Studio downloads them the first time it needs them.' }
+  if (-not $facesOk) { Info 'Nie udało się ich teraz pobrać. Klipownia pobierze je, gdy będą pierwszy raz potrzebne.' 'Could not download them now. Klipownia downloads them the first time it needs them.' }
 
   Step 5 'Claude Code (korzysta z Twojej subskrypcji Claude, bez klucza API)' 'Claude Code (uses your own Claude subscription, no API key)'
   $ClaudeExe = Find-Exe 'claude.exe' @((Join-Path $env:USERPROFILE '.local\bin\claude.exe'))
@@ -258,7 +258,7 @@ try {
       'WARNING: ANTHROPIC_API_KEY is set on this PC. Claude Code would bill the API, not your subscription. Remove it unless you set it on purpose.'
   }
 
-  Step 6 'Łącznik Reel Studio w Claude Desktop' 'The Reel Studio connector for Claude Desktop'
+  Step 6 'Łącznik Klipowni w Claude Desktop' 'The Klipownia connector for Claude Desktop'
   # Classic install reads %APPDATA%\Claude. The Microsoft Store (MSIX) build reads a redirected copy
   # under its package folder, so write there too when it exists.
   if ($ClaudeConfig) {
@@ -277,28 +277,40 @@ try {
     # register.mjs merges one entry, keeps other servers, backs up to .bak and never touches invalid JSON.
     if (-not (Run $Node @((Join-Path $Root 'mcp\register.mjs'), $Node, $Root, $cfg) -AllowFail)) { $connOk = $false }
   }
+  # The old name registered "reel-studio". Drop it, or Claude Desktop shows the tools twice.
+  # Single quotes only in the JS: PowerShell 5.1 mangles double quotes in native arguments.
+  $dropOld = "const fs=require('fs');const f=process.argv[1];if(fs.existsSync(f)){let c;try{c=JSON.parse(fs.readFileSync(f,'utf8'))}catch(e){process.exit(0)}" +
+    "if(c&&c.mcpServers&&c.mcpServers['reel-studio']){delete c.mcpServers['reel-studio'];fs.writeFileSync(f+'.tmp',JSON.stringify(c,null,2)+'\n');fs.renameSync(f+'.tmp',f);console.log('removed the old reel-studio entry from '+f)}}"
+  foreach ($cfg in $configs) { Run $Node @('-e', $dropOld, $cfg) -AllowFail | Out-Null }
   if (-not $connOk) {
-    Info 'Nie udało się dodać łącznika do Claude Desktop (samo Reel Studio działa).' 'Could not add the connector to Claude Desktop (Reel Studio itself works).'
+    Info 'Nie udało się dodać łącznika do Claude Desktop (sama Klipownia działa).' 'Could not add the connector to Claude Desktop (Klipownia itself works).'
   } elseif ($haveDesktop) {
-    Info 'Claude Desktop: łącznik Reel Studio jest włączony. Zamknij Claude Desktop całkiem (także ikonę przy zegarze) i otwórz go znowu.' `
-      'Claude Desktop: the Reel Studio connector is on. Quit Claude Desktop fully (also the icon near the clock) and open it again.'
+    Info 'Claude Desktop: łącznik Klipowni jest włączony. Zamknij Claude Desktop całkiem (także ikonę przy zegarze) i otwórz go znowu.' `
+      'Claude Desktop: the Klipownia connector is on. Quit Claude Desktop fully (also the icon near the clock) and open it again.'
   } else {
     Info 'Claude Desktop nie jest jeszcze zainstalowany. Łącznik jest już zapisany i zadziała, gdy go zainstalujesz (https://claude.com/download).' `
       'Claude Desktop is not installed yet. The connector is saved and works once you install it (https://claude.com/download).'
   }
 
-  Step 7 'Skróty „Reel Studio” na pulpicie i w menu Start' 'The "Reel Studio" shortcuts on the Desktop and in the Start menu'
+  Step 7 'Skróty „Klipownia” na pulpicie i w menu Start' 'The "Klipownia" shortcuts on the Desktop and in the Start menu'
   $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $startPs1 = Join-Path $Root 'win\start.ps1'
-  $icon = Join-Path $Root 'win\ReelStudio.ico'
+  $icon = Join-Path $Root 'win\Klipownia.ico'
   $targets = @(
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Klipownia.lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Programs')) 'Klipownia.lnk')
+  )
+  # Shortcuts from the old name point to the old folder. Remove them so she sees one icon.
+  $oldLinks = @(
     (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Reel Studio.lnk'),
     (Join-Path ([Environment]::GetFolderPath('Programs')) 'Reel Studio.lnk')
   )
   if ($NoShortcuts) {
     Info 'Pomijam skróty (-NoShortcuts). Utworzyłbym:' 'Skipping shortcuts (-NoShortcuts). Would create:'
     foreach ($t in $targets) { Info "   $t -> $ps -WindowStyle Hidden -File `"$startPs1`"" }
+    foreach ($t in $oldLinks) { Info "   (usunąłbym / would remove: $t)" }
   } else {
+    foreach ($t in $oldLinks) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }
     $shell = New-Object -ComObject WScript.Shell
     foreach ($t in $targets) {
       $lnk = $shell.CreateShortcut($t)
@@ -306,7 +318,7 @@ try {
       $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startPs1`""
       $lnk.WorkingDirectory = $Root
       $lnk.WindowStyle = 7  # minimized, so no window flashes before PowerShell hides itself
-      $lnk.Description = 'Reel Studio'
+      $lnk.Description = 'Klipownia'
       if (Test-Path $icon) { $lnk.IconLocation = "$icon,0" }
       $lnk.Save()
       Info "   $t"
@@ -318,7 +330,7 @@ try {
   $ok = $true
   $m = [int][Math]::Floor($Total.Elapsed.TotalMinutes)
   Say "Gotowe ($m min)" "Done ($m min)"
-  Info 'Otwórz „Reel Studio” ikoną na pulpicie albo z menu Start.' 'Open "Reel Studio" from the Desktop icon or the Start menu.'
+  Info 'Otwórz Klipownię ikoną „Klipownia” na pulpicie albo w menu Start.' 'Open "Klipownia" from the Desktop icon or the Start menu.'
 
   # One-time Claude login with her subscription (never the API option). Skipped when already logged in.
   if (-not $NoLogin) {
@@ -338,14 +350,14 @@ try {
       }
     }
   }
-  Info 'Żeby zatrzymać Reel Studio: kliknij dwa razy „Stop Reel Studio.cmd” w folderze win.' "To stop Reel Studio: double-click 'Stop Reel Studio.cmd' in the win folder."
+  Info 'Żeby zatrzymać Klipownię: kliknij dwa razy „Stop Klipownia.cmd” w folderze win.' "To stop Klipownia: double-click 'Stop Klipownia.cmd' in the win folder."
   Info "   $Root\win"
 } catch {
   End-Step
   if ("$_" -ne 'REEL_STOP') { Write-Host "$_" -ForegroundColor Red }
   Write-Host ''
-  Write-Host "Coś poszło nie tak. Zrób zdjęcie tego okna i wyślij Peterowi razem z plikiem $Log" -ForegroundColor Yellow
-  Write-Host "Something went wrong. Send Peter a photo of this window and the file $Log" -ForegroundColor Yellow
+  Write-Host "Coś poszło nie tak. Zrób zdjęcie tego okna i wyślij nam razem z plikiem $Log (odpowiedz na mail z zakupem)." -ForegroundColor Yellow
+  Write-Host "Something went wrong. Send us a photo of this window and the file $Log (reply to the purchase email)." -ForegroundColor Yellow
   Write-Host 'Potem uruchom instalację jeszcze raz: zacznie od miejsca, w którym przerwała. / Then run the installer again: it continues where it stopped.'
 } finally {
   try { Stop-Transcript | Out-Null } catch { }

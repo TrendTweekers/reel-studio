@@ -1,4 +1,4 @@
-// Render one effect on a real reel, to look at it. Needs Reel Studio running (media comes from :8787).
+// Render one effect on a real reel, to look at it. Needs Klipownia running (media comes from :8787).
 //   npx tsx scripts/fx-still.ts <slug> '<effect json>' [--at 0.1,0.5,0.9] [--out dir] [--video] [--keep] [--no-reels] [--no-cutout]
 // The effect JSON is an Effect without id; "at" = source seconds (default: 8). Only this effect is
 // shown (hook off, other effects removed) unless --keep. --at = fractions of the effect's length.

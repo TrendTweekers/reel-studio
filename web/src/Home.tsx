@@ -180,8 +180,8 @@ export function Home() {
     <div className="home">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">R</span>
-          <span className="brand-name">Reel Studio</span>
+          <span className="brand-mark">K</span>
+          <span className="brand-name">Klipownia</span>
         </div>
         <TopRight />
       </header>

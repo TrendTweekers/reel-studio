@@ -1,4 +1,4 @@
-# Reel Studio analysis tools
+# Klipownia analysis tools
 
 Python 3.12. Every tool is a CLI: `python tools/<name>.py <project_dir> [options]`.
 It prints JSON lines on stdout: `{"step":"...","progress":0..1}` while working, and a last line

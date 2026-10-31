@@ -6,7 +6,7 @@ const RULES: { code: ErrorCode; re: RegExp; text: string }[] = [
   {
     code: 'tool_missing',
     re: /Could not start|spawn\s+\S+\s+ENOENT|No such file or directory: '(ffmpeg|ffprobe|python3?)'|command not found|ModuleNotFoundError|No module named/i,
-    text: 'A part of the app is missing. Run the installer again ("Start Reel Studio.command").',
+    text: 'A part of the app is missing. Run the installer again ("Start Klipownia.command").',
   },
   {
     code: 'bad_file',

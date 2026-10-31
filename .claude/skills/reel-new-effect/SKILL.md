@@ -1,6 +1,6 @@
 ---
 name: reel-new-effect
-description: Build a new kind of effect into Reel Studio (a code change), e.g. a new text animation, a new transition, a new sticker style the user saw on Instagram. Use only when no existing effect kind can do what the user wants.
+description: Build a new kind of effect into Klipownia (a code change), e.g. a new text animation, a new transition, a new sticker style the user saw on Instagram. Use only when no existing effect kind can do what the user wants.
 ---
 
 # Add a new effect kind
@@ -25,4 +25,4 @@ the Ask box on the page, tell the user to open "Ask Claude.command" and ask agai
    shows: `npx remotion still src/remotion/index.ts Reel out/test.png --frame=<n> --props=<json file>`
    (make the props file from `curl -s localhost:8787/api/projects/<slug>` fields edit, words, faces
    plus the urls the server uses), and look at the picture.
-7. Restart the server (double-click "Stop Reel Studio.command", then click Reel Studio in the Dock) so renders use the new code.
+7. Restart the server (double-click "Stop Klipownia.command", then click Klipownia in the Dock) so renders use the new code.

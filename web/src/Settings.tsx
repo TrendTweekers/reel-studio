@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BrandSettings } from '../../src/shared/types';
-import { api, HttpError, ServerDownError, type LicenceState, type VoiceState } from './api';
+import { api, HttpError, ServerDownError, type LicenceState, type UpdateState, type VoiceState } from './api';
 import { useBrand } from './brand';
 import { go, TopRight } from './App';
 import { errText, fmt, num, useT, type StrKey } from './i18n';
@@ -29,8 +29,8 @@ export function Settings({ section }: { section: string | null }) {
           ← {t('back')}
         </button>
         <div className="brand">
-          <span className="brand-mark">R</span>
-          <span className="brand-name">Reel Studio</span>
+          <span className="brand-mark">K</span>
+          <span className="brand-name">Klipownia</span>
         </div>
         <TopRight />
       </header>
@@ -159,7 +159,22 @@ function LicenceSection() {
       setState(e instanceof HttpError && e.status === 404 ? 'missing' : 'error');
     }
   };
-  const saved = lic?.status === 'saved' && (lic.key ?? '') === key.trim();
+  // The server shows the key masked ("ABCD…WXYZ"); the field keeps what she typed until she changes it.
+  const same = !!lic?.key && (key.trim() === lic.key || (key.trim().startsWith(lic.key.slice(0, 4)) && key.trim().endsWith(lic.key.slice(-4))));
+  const saved = same && (lic?.status === 'saved' || lic?.status === 'valid');
+  const bad = same && lic && ['invalid', 'revoked', 'limit'].includes(lic.status);
+  const down = same && lic?.status === 'down';
+  const [upd, setUpd] = useState<UpdateState | null>(null);
+  const [updState, setUpdState] = useState<'idle' | 'checking' | 'error'>('idle');
+  const checkUpdate = async () => {
+    setUpdState('checking');
+    try {
+      setUpd(await api.updateCheck());
+      setUpdState('idle');
+    } catch {
+      setUpdState('error');
+    }
+  };
   return (
     <section className="story-card settings-card" id="set-licence">
       <h2 className="serif-title">{t('set_licence')}</h2>
@@ -173,9 +188,22 @@ function LicenceSection() {
           {state === 'saving' ? t('saving') : t('save')}
         </button>
       </div>
-      {saved && <p className="ok-line">✓ {t('licenceSaved')}</p>}
+      {saved && <p className="ok-line">✓ {lic?.status === 'valid' ? t('licenceValid') : t('licenceSaved')}{lic?.email ? ` · ${lic.email}` : ''}</p>}
+      {bad && <p className="error-text">{t(lic.status === 'limit' ? 'licenceLimit' : lic.status === 'revoked' ? 'licenceRevoked' : 'licenceInvalid')}</p>}
+      {down && <p className="muted small">{t('licenceDown')}</p>}
       {state === 'error' && <p className="error-text">{t('licenceFailed')}</p>}
       {state === 'missing' && <p className="muted small">{t('licenceNoServer')}</p>}
+      {lic?.status === 'valid' && (
+        <div className="licence-row" style={{ marginTop: 14 }}>
+          <button className="btn" onClick={() => void checkUpdate()} disabled={updState === 'checking'}>
+            {updState === 'checking' ? t('updateChecking') : t('updateCheck')}
+          </button>
+          {upd && !upd.available && updState === 'idle' && <span className="muted small">{upd.reason === 'down' ? t('licenceDown') : fmt(t('updateNone'), { v: upd.current })}</span>}
+          {upd?.available && <span className="ok-line">{fmt(t('updateAvailable'), { v: upd.latest ?? '' })}</span>}
+          {updState === 'error' && <span className="error-text">{t('licenceFailed')}</span>}
+        </div>
+      )}
+      {upd?.available && <p className="muted small">{t('updateHow')}</p>}
     </section>
   );
 }
@@ -186,7 +214,7 @@ function AboutSection() {
     <section className="story-card settings-card" id="set-about">
       <h2 className="serif-title">{t('set_about')}</h2>
       <p>
-        Reel Studio <span className="mono">{fmt(t('aboutVersion'), { v: APP_VERSION })}</span>
+        Klipownia <span className="mono">{fmt(t('aboutVersion'), { v: APP_VERSION })}</span>
       </p>
       <p className="muted">{t('aboutLocal')}</p>
       <div className="remotion-note">

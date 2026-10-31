@@ -1,6 +1,6 @@
 ---
 name: reel-import
-description: Bring a video file from the Mac (Downloads, AirDrop, Desktop, Photos export) into Reel Studio as a new reel. Use when the user says "edit the video I just AirDropped", "take the newest video from Downloads", or gives a file path.
+description: Bring a video file from the Mac (Downloads, AirDrop, Desktop, Photos export) into Klipownia as a new reel. Use when the user says "edit the video I just AirDropped", "take the newest video from Downloads", or gives a file path.
 ---
 
 # Import a video
@@ -14,7 +14,7 @@ just drop the file on the page." Dropping the file on the page always works.
    `ls -t ~/Downloads/*.{mov,MOV,mp4,MP4,m4v} 2>/dev/null | head -5` and ask which one if unsure.
    iPhone videos come by AirDrop to ~/Downloads.
 2. Check the server: `curl -s localhost:8787/api/projects >/dev/null || echo DOWN`. If down, tell
-   the user to click "Reel Studio" in the Dock and wait.
+   the user to click "Klipownia" in the Dock and wait.
 3. Upload (the name becomes the reel title):
    `curl -s -F "video=@<path>" -H "x-file-name: $(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$(basename '<path>')")" localhost:8787/api/projects`
    It answers `{"slug":"..."}`.

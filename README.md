@@ -1,4 +1,4 @@
-# Reel Studio
+# Klipownia
 
 Edit your Reels on your Mac with Claude. Drop a video from your phone: pauses are cut, subtitles
 appear word by word, and you change the look in one click or by asking Claude in plain words.
@@ -19,10 +19,10 @@ i to staje się Twoim stylem.*
 **Video from text (no camera).** Choose "Film z tekstu" on Home. Type a topic, Claude writes a short
 script, you fix it, and you give it a voice: read it from the built-in teleprompter, drop a voice
 memo, or let the free computer voice read it (it runs on your Mac; record a 15 s sample so it sounds
-like you). Reel Studio then draws animated scenes (title, key words, list, number, quote, compare,
+like you). Klipownia then draws animated scenes (title, key words, list, number, quote, compare,
 your photo, your other reels) with subtitles and music. Claude plans the scenes; you change them in
 the "Sceny" panel. *Film z tekstu: bez kamery. Wpisujesz temat, Claude pisze tekst, Ty go czytasz
-(albo czyta go głos komputera), a Reel Studio robi z tego film ze scenami i napisami.*
+(albo czyta go głos komputera), a Klipownia robi z tego film ze scenami i napisami.*
 
 **YouTube videos (long).** Choose "YouTube video" when you add a 20 to 40 minute video. Reel
 Studio cuts pauses and the parts you said twice, finds rough chapters, and keeps the picture wide.
@@ -62,8 +62,8 @@ You need / Potrzebujesz:
    subscription"** and click **Authorize**. Never choose the API key option.
    *Na końcu zaloguj się raz do Claude: otworzy się okno przeglądarki. Wybierz **„Claude account
    with subscription"** i kliknij **Authorize**. Nigdy nie wybieraj opcji z kluczem API.*
-5. Open **Reel Studio** from Applications and drag it to the Dock.
-   *Otwórz **Reel Studio** z folderu Aplikacje i przeciągnij do Docka.*
+5. Open **Klipownia** from Applications and drag it to the Dock.
+   *Otwórz **Klipownię** z folderu Aplikacje i przeciągnij do Docka.*
 
 ## Install on Windows / Instalacja na Windows
 
@@ -82,36 +82,40 @@ You need / Potrzebujesz:
 irm https://raw.githubusercontent.com/TrendTweekers/reel-studio/main/get.ps1 | iex
 ```
 
-3. Wait. When Windows asks "Do you want to allow this app to make changes?", click **Yes**.
-   *Poczekaj. Gdy Windows zapyta „Czy chcesz zezwolić tej aplikacji na wprowadzanie zmian?”,
-   kliknij **Tak**.*
+3. Paste your licence key from the purchase email when asked, press Enter. Then wait. When
+   Windows asks "Do you want to allow this app to make changes?", click **Yes**.
+   *Wklej klucz licencji z maila po zakupie, gdy instalator o niego poprosi, i naciśnij Enter.
+   Potem poczekaj. Gdy Windows zapyta „Czy chcesz zezwolić tej aplikacji na wprowadzanie
+   zmian?”, kliknij **Tak**.*
 4. At the end, log in to Claude once: a browser window opens. Log in with your Claude account
    and click **Authorize**. Never choose the API key option.
    *Na końcu zaloguj się raz do Claude: otworzy się okno przeglądarki. Zaloguj się swoim kontem
    Claude i kliknij **Authorize**. Nigdy nie wybieraj opcji z kluczem API.*
-5. Open **Reel Studio** from the Desktop icon or the Start menu.
-   *Otwórz **Reel Studio** ikoną na pulpicie albo z menu Start.*
+5. Open **Klipownia** from the Desktop icon or the Start menu.
+   *Otwórz **Klipownię** ikoną na pulpicie albo z menu Start.*
 
-What happens: the line installs what is missing of Git, Node.js, Python 3.12 and FFmpeg (with
-winget), downloads Reel Studio to `%USERPROFILE%\ReelStudio`, installs the app packages, the
-speech model (1.6 GB), Claude Code and the Reel Studio connector for Claude Desktop, and adds the
-"Reel Studio" shortcuts. It does not change the PowerShell security settings.
-*Co się dzieje: linia instaluje to, czego brakuje, pobiera Reel Studio do
-`%USERPROFILE%\ReelStudio` i dodaje skróty „Reel Studio”. Nie zmienia ustawień bezpieczeństwa
-PowerShell.*
+What happens: the line checks your key, downloads the newest Klipownia to
+`%USERPROFILE%\Klipownia`, installs what is missing of Node.js, Python 3.12 and FFmpeg (with
+winget), the app packages, the speech model (1.6 GB), Claude Code and the Klipownia connector for
+Claude Desktop, and adds the "Klipownia" shortcuts. It does not change the PowerShell security
+settings. An old Reel Studio folder (`%USERPROFILE%\ReelStudio`) is moved to the new place with
+all your reels.
+*Co się dzieje: linia sprawdza klucz, pobiera najnowszą Klipownię do `%USERPROFILE%\Klipownia`,
+instaluje to, czego brakuje, i dodaje skróty „Klipownia”. Nie zmienia ustawień bezpieczeństwa
+PowerShell. Stary folder Reel Studio zostaje przeniesiony razem z Twoimi rolkami.*
 
 ## Update / Aktualizacja
 
 Run the same line again. Your reels, pictures, music and styles stay. On Windows: the
-PowerShell line, in PowerShell.
+PowerShell line, in PowerShell. It finds your key by itself.
 *Uruchom tę samą linię jeszcze raz. Twoje rolki, zdjęcia, muzyka i style zostają. Na Windows:
-linię dla PowerShell, w PowerShell.*
+linię dla PowerShell, w PowerShell. Sama znajdzie Twój klucz.*
 
 ## For the technical helper
 
-- App folder: `~/ReelStudio`. Logs: `~/Library/Logs/ReelStudio.log` and `ReelStudio-install.log`.
-- Windows: app folder `%USERPROFILE%\ReelStudio`, logs in its `logs\` folder, start and stop
-  scripts in `win\`. Details in SETUP.md.
+- App folder: `~/Klipownia`. Logs: `~/Library/Logs/Klipownia.log` and `Klipownia-install.log`.
+- Windows: app folder `%USERPROFILE%\Klipownia`, logs in its `logs\` folder, start and stop
+  scripts in `win\`, the installed version in `.version`. Details in SETUP.md.
 - Local server on `127.0.0.1:8787` only. Node + Remotion (video), Python + faster-whisper + MediaPipe
   (analysis), Claude Code (`claude -p`) for the chat box. No API key is used or needed.
 - Remotion is free for individuals and companies with up to 3 people

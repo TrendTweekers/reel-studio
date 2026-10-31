@@ -7,7 +7,7 @@ description: >-
   on my reel", or is dealing with a critic, a hater or a lead in the comments.
 ---
 
-> **For this Reel Studio (read first).** This skill is from Jake Schincariol's
+> **For Klipownia (read first).** This skill is from Jake Schincariol's
 > instagram-agent-skill (MIT, see LICENSE in this folder), adapted for this app.
 > - Who the user is: `settings.json` `brand` (name, handle, website, language, use). Read it first.
 > - Every line the user will SAY, show ON SCREEN or POST (hooks, script beats, captions, replies, DMs)

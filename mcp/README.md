@@ -1,4 +1,4 @@
-# Reel Studio connector (MCP) for the Claude Desktop chat
+# Klipownia connector (MCP) for the Claude Desktop chat
 
 Lets the user edit their reels from their normal Claude Desktop chat (no Claude Code needed).
 `mcp/server.ts` is a local stdio MCP server. It talks only to the app's JSON API on
@@ -16,7 +16,7 @@ This merges one entry into `~/Library/Application Support/Claude/claude_desktop_
 file that is not valid JSON is left alone and the script exits 1):
 
     "mcpServers": {
-      "reel-studio": {
+      "klipownia": {
         "command": "/opt/homebrew/opt/node@24/bin/node",
         "args": ["--import", "file:///<app>/node_modules/tsx/dist/loader.mjs", "/<app>/mcp/server.ts"],
         "cwd": "/<app>"
@@ -34,28 +34,29 @@ load the connector.
 `install.ps1` calls the same script with the config path given explicitly (the default in
 `register.mjs` is the Mac path):
 
-    node.exe mcp\register.mjs "C:\Program Files\nodejs\node.exe" "C:\Users\<user>\ReelStudio" "%APPDATA%\Claude\claude_desktop_config.json"
+    node.exe mcp\register.mjs "C:\Program Files\nodejs\node.exe" "C:\Users\<user>\Klipownia" "%APPDATA%\Claude\claude_desktop_config.json"
 
 The result:
 
-    "reel-studio": {
+    "klipownia": {
       "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": ["--import", "file:///C:/Users/<user>/ReelStudio/node_modules/tsx/dist/loader.mjs", "C:\\Users\\<user>\\ReelStudio\\mcp\\server.ts"],
-      "cwd": "C:\\Users\\<user>\\ReelStudio"
+      "args": ["--import", "file:///C:/Users/<user>/Klipownia/node_modules/tsx/dist/loader.mjs", "C:\\Users\\<user>\\Klipownia\\mcp\\server.ts"],
+      "cwd": "C:\\Users\\<user>\\Klipownia"
     }
 
 The Microsoft Store (MSIX) build of Claude Desktop reads a redirected copy of `%APPDATA%`, so
 `install.ps1` also writes `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude_desktop_config.json`
 when such a package folder exists. When Claude Desktop is not installed yet, the file is written
 anyway and the connector shows up once it is installed. Quit Claude Desktop fully (also the tray
-icon near the clock) and open it again to load the connector. The app itself is started with
+icon near the clock) and open it again to load the connector. `install.ps1` also removes an
+old `"reel-studio"` entry (from before the rename), so the tools do not show up twice. The app itself is started with
 `win\start.ps1` (the Desktop and Start menu shortcut), see SETUP.md.
 
 ## Tools
 
 | Area | Tools |
 |---|---|
-| App | open_reel_studio (starts the app on macOS and waits up to 60 s; can open a reel page) |
+| App | open_klipownia (starts the app on macOS and waits up to 60 s; can open a reel page) |
 | Read | list_reels, get_reel, get_words (search / from-to), get_transcript, check_reel, list_styles, list_board, list_music, video_status |
 | Edit | update_reel (JSON merge patch on: title, hook, style, sound, toggles, cover, wordFixes, endCard, post, tiktok), apply_style, add_effect / update_effect / remove_effect, cut_words / keep_words, fix_word, set_pause_tightness, make_clip |
 | Cover | find_cover_frames (shows the top 4 frames), set_cover, make_cover (shows both covers) |
@@ -68,8 +69,8 @@ between) the tool reads the edit again and makes the change once more. After eac
 tool returns the check result. Cut and keep use the same segment math as the editor page
 (`web/src/editState.ts`).
 
-When the server is not running, every tool answers "Reel Studio is not open. I can open it:
-call open_reel_studio."
+When the server is not running, every tool answers "Klipownia is not open. I can open it:
+call open_klipownia."
 
 Fallbacks for an older server: when `GET /problems` is missing, the connector runs
 `src/shared/check.ts` itself. When `POST /reveal` is missing, it runs `open -R` itself.

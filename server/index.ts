@@ -1,9 +1,10 @@
-// Reel Studio local server. Serves the editor page, the media files, and runs the analysis
+// Klipownia local server. Serves the editor page, the media files, and runs the analysis
 // tools and the render. Everything stays on this computer.
 import express from 'express';
 import multer from 'multer';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -555,8 +556,8 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
   } catch (e) {
     fs.rmSync(tmp, { force: true });
     if (shuttingDown) {
-      // Reel Studio is closing: not her mistake. The next start says "stopped before it was done".
-      toolLog(slug, `\n== render stopped (Reel Studio closed)\n`);
+      // Klipownia is closing: not her mistake. The next start says "stopped before it was done".
+      toolLog(slug, `\n== render stopped (Klipownia closed)\n`);
       job.stopped = true;
       job.stage = 'Stopped';
     } else {
@@ -1350,7 +1351,7 @@ const askSystem = (slug: string) => {
   const who = b.name || 'the user';
   return [
     `You are working on ONE reel: projects/${slug} (slug "${slug}"). Unless ${who} clearly names another reel, every request is about this one.`,
-    `${who} is typing in the chat box on the Reel Studio editor page and sees the preview update live when edit.json changes.`,
+    `${who} is typing in the chat box on the Klipownia editor page and sees the preview update live when edit.json changes.`,
     'They may be changing the reel on the page at the same time: re-read edit.json right before every change, and prefer small Edit changes over Write.',
     'Never delete a reel, a picture or a video; if asked, say to use the delete button on the page.',
     `Reply in 1 to 3 short sentences in the language they wrote in (default ${b.language === 'en' ? 'English' : 'Polish'}). Say what you changed in plain words. No code, no file names.`,
@@ -1415,15 +1416,95 @@ app.get('/api/settings/claude', (_req, res) => {
   const creds = [path.join(home, '.claude', '.credentials.json'), path.join(home, '.claude.json')].some((p) => fs.existsSync(p));
   res.json({ installed: version !== null, version, loggedIn: version === null ? null : creds ? true : null });
 });
-// The licence key is only stored for now; checking it comes with the shop.
-app.get('/api/settings/licence', (_req, res) => {
-  const key = readJson<{ licence?: string }>(SETTINGS, {}).licence ?? null;
-  res.json({ key, status: key ? 'saved' : 'none' });
+// ---- Licence (Klipownia API, see ~/klipownia-api docs/client-flow.md) ----
+// The key is checked with the shop through our API: activate once per machine, then validate daily.
+// A lapsed or unreachable licence never disables the tool; it only stops updates.
+const LICENCE_API = process.env.KLIPOWNIA_API ?? 'https://api.klipownia.pl';
+type LicenceState = { key: string; activationId?: string; status: 'valid' | 'invalid' | 'revoked' | 'limit' | 'down' | 'none'; email?: string; checkedAt?: string; error?: string };
+const machineId = () => crypto.createHash('sha256').update(`${os.hostname()}|${os.userInfo().username}|${os.platform()}`).digest('hex').slice(0, 24);
+const licenceState = (): LicenceState => {
+  const st = readJson<{ licence?: string | LicenceState }>(SETTINGS, {}).licence;
+  if (!st) return { key: '', status: 'none' };
+  if (typeof st === 'string') return { key: st, status: 'none' }; // saved before the shop existed
+  return st;
+};
+const saveLicence = (st: LicenceState | null) => writeJson(SETTINGS, { ...readJson<Record<string, unknown>>(SETTINGS, {}), licence: st ?? undefined });
+const licenceCall = async (route: string, body: Record<string, unknown>) => {
+  const r = await fetch(`${LICENCE_API}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (r.status === 503) throw new Error('down');
+  return j as { ok?: boolean; activation_id?: string; status?: string; customer_email?: string; error?: string };
+};
+const checkLicence = async (key: string, activationId?: string): Promise<LicenceState> => {
+  const now = new Date().toISOString();
+  try {
+    if (!activationId) {
+      const a = await licenceCall('/v1/license/activate', { key, machine: { id: machineId(), name: os.hostname(), platform: process.platform } });
+      if (!a.ok) return { key, status: a.error === 'limit' ? 'limit' : a.error === 'revoked' ? 'revoked' : 'invalid', checkedAt: now, error: a.error };
+      return { key, activationId: a.activation_id, status: 'valid', email: a.customer_email, checkedAt: now };
+    }
+    const v = await licenceCall('/v1/license/validate', { key, activation_id: activationId });
+    const status = v.ok ? 'valid' : v.status === 'revoked' ? 'revoked' : v.status === 'limit' ? 'limit' : 'invalid';
+    return { key, activationId, status, email: v.customer_email, checkedAt: now, error: v.ok ? undefined : v.error };
+  } catch {
+    // The shop is unreachable: keep what we knew, say "down". Never punish the user for our outage.
+    const old = licenceState();
+    return { ...old, key, activationId, status: old.status === 'valid' ? 'valid' : 'down', error: 'down' };
+  }
+};
+const publicLicence = (st: LicenceState) => ({ key: st.key ? `${st.key.slice(0, 4)}…${st.key.slice(-4)}` : null, status: st.status, email: st.email, checkedAt: st.checkedAt, error: st.error });
+app.get('/api/settings/licence', (_req, res) => res.json(publicLicence(licenceState())));
+app.put('/api/settings/licence', async (req, res) => {
+  const key = String(req.body?.key ?? '').trim().slice(0, 120);
+  if (!key) {
+    saveLicence(null);
+    res.json(publicLicence({ key: '', status: 'none' }));
+    return;
+  }
+  const st = await checkLicence(key);
+  saveLicence(st);
+  res.json(publicLicence(st));
 });
-app.put('/api/settings/licence', (req, res) => {
-  const key = String(req.body?.key ?? '').trim().slice(0, 120) || null;
-  writeJson(SETTINGS, { ...readJson<Record<string, unknown>>(SETTINGS, {}), licence: key ?? undefined });
-  res.json({ key, status: key ? 'saved' : 'none' });
+// Daily re-check, quietly.
+const recheckLicence = async () => {
+  const st = licenceState();
+  if (!st.key) return;
+  const age = st.checkedAt ? Date.now() - Date.parse(st.checkedAt) : Infinity;
+  if (age < 20 * 3600_000) return;
+  saveLicence(await checkLicence(st.key, st.activationId));
+};
+setTimeout(() => void recheckLicence(), 30_000);
+setInterval(() => void recheckLicence(), 6 * 3600_000).unref();
+
+// Installed version: .version (written by the installer from the zip) or git.
+const installedVersion = () => {
+  const v = readText(path.join(ROOT, '.version')).trim();
+  if (v) return v;
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8', timeout: 5000 }).trim();
+  } catch {
+    return 'unknown';
+  }
+};
+// Is there a newer version? The update itself = run the install line again (the installer asks the API with the key).
+app.get('/api/settings/update', async (_req, res) => {
+  const st = licenceState();
+  const current = installedVersion();
+  if (!st.key || !st.activationId) {
+    res.json({ current, available: false, reason: 'no_licence' });
+    return;
+  }
+  try {
+    const r = await fetch(`${LICENCE_API}/v1/release?key=${encodeURIComponent(st.key)}&activation_id=${encodeURIComponent(st.activationId)}&platform=${process.platform === 'win32' ? 'win' : 'mac'}`, { signal: AbortSignal.timeout(15_000) });
+    const j = (await r.json().catch(() => ({}))) as { version?: string; date?: string; notes?: string; error?: string };
+    if (!r.ok || !j.version) {
+      res.json({ current, available: false, reason: r.status === 503 ? 'down' : (j.error ?? 'invalid') });
+      return;
+    }
+    res.json({ current, latest: j.version, date: j.date, notes: j.notes, available: !current.startsWith(j.version.slice(0, 7)) && !j.version.startsWith(current.slice(0, 7)) });
+  } catch {
+    res.json({ current, available: false, reason: 'down' });
+  }
 });
 
 app.get('/api/settings/autocheck', (_req, res) => {
@@ -1532,7 +1613,7 @@ const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried
       code: errCode,
       text:
         errCode === 'claude_missing'
-          ? 'Claude Code is not installed. Run "Start Reel Studio.command" once to install it.'
+          ? 'Claude Code is not installed. Run "Start Klipownia.command" once to install it.'
           : errCode === 'not_logged_in'
             ? 'Claude is not logged in. Double-click "Ask Claude.command" once and log in with your Claude account.'
             : errCode === 'stopped'
@@ -1992,13 +2073,13 @@ for (const slug of resumeOrder) {
   else if (s.step === 'covers' || q === 'covers') setStatus(slug, { step: 'ready', progress: 1 });
 }
 
-const server = app.listen(PORT, '127.0.0.1', () => console.log(`Reel Studio is running: ${ORIGIN}`));
+const server = app.listen(PORT, '127.0.0.1', () => console.log(`Klipownia is running: ${ORIGIN}`));
 
 // Stop every child with the server, so no tool keeps writing into a reel after a restart.
 const shutdown = (signal: NodeJS.Signals) => {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`Reel Studio is stopping (${signal}); stopping ${children.size} child process(es).`);
+  console.log(`Klipownia is stopping (${signal}); stopping ${children.size} child process(es).`);
   for (const cancel of cancels) {
     try {
       cancel();

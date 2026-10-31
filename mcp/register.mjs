@@ -1,4 +1,4 @@
-// Registers the Reel Studio connector in Claude Desktop. No dependencies. Called by install.sh:
+// Registers the Klipownia connector in Claude Desktop. No dependencies. Called by install.sh:
 //   node mcp/register.mjs <abs path to node> <abs app dir> [config file]
 // Default config file: ~/Library/Application Support/Claude/claude_desktop_config.json
 // Keeps every other server and key, backs the old file up to .bak, writes atomically.
@@ -39,7 +39,9 @@ const servers = cfg.mcpServers && typeof cfg.mcpServers === 'object' && !Array.i
 // from the working directory.
 const loader = path.join(appDir, 'node_modules', 'tsx', 'dist', 'loader.mjs');
 if (!fs.existsSync(loader)) fail(`tsx is not installed in ${appDir} (run npm install first)`);
-servers['reel-studio'] = {
+// The old name registered "reel-studio". Drop it, or Claude Desktop shows every tool twice.
+delete servers['reel-studio'];
+servers['klipownia'] = {
   command: nodeBin,
   args: ['--import', pathToFileURL(loader).href, path.join(appDir, 'mcp', 'server.ts')],
   cwd: appDir,
@@ -49,4 +51,4 @@ cfg.mcpServers = servers;
 const tmp = `${cfgPath}.tmp-${process.pid}`;
 fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
 fs.renameSync(tmp, cfgPath);
-console.log(`register: reel-studio added to ${cfgPath}`);
+console.log(`register: klipownia added to ${cfgPath}`);

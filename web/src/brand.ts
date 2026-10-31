@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 import type { BrandSettings } from '../../src/shared/types';
 import { api, HttpError } from './api';
 
-// Who uses this copy of Reel Studio (name, handle, what for). Loaded once by App and shared here.
+// Who uses this copy of Klipownia (name, handle, what for). Loaded once by App and shared here.
 
 export const DEFAULT_BRAND: BrandSettings = { name: '', language: 'pl', use: 'both', done: false };
 

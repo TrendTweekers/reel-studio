@@ -1,4 +1,4 @@
-// Reel Studio connector for the Claude Desktop chat (MCP over stdio).
+// Klipownia connector for the Claude Desktop chat (MCP over stdio).
 // Paulina talks to Claude in her normal Claude Desktop chat; these tools let that Claude edit her
 // reels the same way the /reel-* skills do in Claude Code, but through the app's local JSON API on
 // http://localhost:8787. It never deletes anything and never posts anything.
@@ -62,7 +62,7 @@ else
     if (p && fs.existsSync(p) && !(process.env.PATH ?? '').split(path.delimiter).includes(p))
       process.env.PATH = `${p}${path.delimiter}${process.env.PATH ?? ''}`;
 
-const NOT_OPEN = 'Reel Studio is not open. I can open it: call open_reel_studio.';
+const NOT_OPEN = 'Klipownia is not open. I can open it: call open_klipownia.';
 class NotOpen extends Error {}
 class UserError extends Error {}
 
@@ -252,14 +252,14 @@ const openUrl = async (target: string, app?: string) => {
   if (IS_MAC && app) return (await run('open', ['-a', app])).code === 0;
   return openTarget(target);
 };
-// Windows has no app bundle to open: start the server ourselves, hidden, logging to logs/ReelStudio.log (same file as win/start.ps1).
+// Windows has no app bundle to open: start the server ourselves, hidden, logging to logs/Klipownia.log (same file as win/start.ps1).
 // Through PowerShell Start-Process (ShellExecute), so the server does not inherit our stdio pipes:
 // a plain spawn would keep Claude Desktop's pipe to this connector open after we exit.
 const startServerWin = () => {
   const q = (x: string) => `'${x.replace(/'/g, "''")}'`; // PowerShell single quotes
   const loader = pathToFileURL(path.join(ROOT, 'node_modules', 'tsx', 'dist', 'loader.mjs')).href;
   fs.mkdirSync(path.join(ROOT, 'logs'), { recursive: true });
-  const line = `"${process.execPath}" --import ${loader} "${path.join(ROOT, 'server', 'index.ts')}" >> "${path.join(ROOT, 'logs', 'ReelStudio.log')}" 2>&1`;
+  const line = `"${process.execPath}" --import ${loader} "${path.join(ROOT, 'server', 'index.ts')}" >> "${path.join(ROOT, 'logs', 'Klipownia.log')}" 2>&1`;
   const ps = `Start-Process -WindowStyle Hidden -WorkingDirectory ${q(ROOT)} -FilePath cmd.exe -ArgumentList ${q(`/d /s /c "${line}"`)}`;
   const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], {
     stdio: 'ignore',
@@ -329,7 +329,7 @@ const renderFrame = async (p: Project, frame: number) => {
   const { R, serveUrl, browser } = await engine();
   const inputProps = reelProps(p);
   const composition = await R.selectComposition({ serveUrl, id: 'Reel', inputProps, puppeteerInstance: browser, logLevel: 'error' });
-  const out = path.join(os.tmpdir(), `reel-studio-frame-${process.pid}-${Date.now()}.jpg`);
+  const out = path.join(os.tmpdir(), `klipownia-frame-${process.pid}-${Date.now()}.jpg`);
   try {
     await R.renderStill({ composition, serveUrl, inputProps, frame, imageFormat: 'jpeg', jpegQuality: 80, scale: 0.5, output: out, puppeteerInstance: browser, logLevel: 'error' });
     return fs.readFileSync(out).toString('base64');
@@ -359,7 +359,7 @@ const describeFrame = (e: Edit, words: Word[], t: number) => {
 };
 
 // ---------- server ----------
-// Who uses this copy of Reel Studio (settings.json "brand", set on the page's first start).
+// Who uses this copy of Klipownia (settings.json "brand", set on the page's first start).
 const brandNow = () => {
   try {
     const b = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings.json'), 'utf8')).brand ?? {};
@@ -369,11 +369,11 @@ const brandNow = () => {
   }
 };
 const B = brandNow();
-const INSTRUCTIONS = `Reel Studio: ${B.name ? `${B.name}'s` : "the user's"} own video editor on their Mac. These tools change their reels and videos.
+const INSTRUCTIONS = `Klipownia: ${B.name ? `${B.name}'s` : "the user's"} own video editor on their Mac. These tools change their reels and videos.
 WHO: ${B.name || 'the user'}${B.handle ? ` (${B.handle})` : ''}, ${B.use === 'product' ? 'promoting a product, app or website with short videos' : B.use === 'creator' ? 'a creator who films short videos' : 'a creator who films short videos and also promotes a product'}. Who they are and what they sound like: get_preferences (brand.md) and instagram/voice.md. Default look: elegant, editorial, calm. Cream, black and one soft accent. Serif headlines. Never loud or cheap.
 TALK: answer in ${B.language === 'en' ? 'English' : 'Polish (informal "Ty")'}, or the language the user writes in. Short sentences, plain words. No code, file names, JSON or technical words unless asked. Say what you changed in plain words ("I added your coat photo when you say płaszcz").
 START: call get_preferences once at the start of a conversation and follow it. When the user says something that should hold for ALL future reels, call remember_preference and say "Zapamiętam to." (or "I will remember") A wish for one reel only goes into that reel (update_reel), not into the lasting preferences.
-WORK: if the user does not name a reel, use the newest from list_reels. Find words with get_words (search) before placing anything; never guess a time. All times in a reel are SOURCE seconds (seconds into the original video); tools that take a word index do the math for you. After every change call check_reel and fix every problem it lists. To see your result, call show_reel_frame at the moment you changed and look at the picture. The user sees changes live on the editor page (offer open_reel_studio with the reel).
+WORK: if the user does not name a reel, use the newest from list_reels. Find words with get_words (search) before placing anything; never guess a time. All times in a reel are SOURCE seconds (seconds into the original video); tools that take a word index do the math for you. After every change call check_reel and fix every problem it lists. To see your result, call show_reel_frame at the moment you changed and look at the picture. The user sees changes live on the editor page (offer open_klipownia with the reel).
 TASTE: fewer, better effects. About one effect every 2 to 4 seconds is plenty; pictures and labels on stressed words, not on every word; keep the face free; one idea per effect. When unsure, do less and ask.
 PICTURES AND MUSIC: use only the user's own board pictures (list_board) and their own music (list_music). If the user asks for a picture from the internet or Pinterest, say it can bring a copyright claim and ask them to add their own picture on the page.
 NEVER delete a reel, a picture or a video file (there are no tools for it; the user does that on the page). NEVER post anything to Instagram or TikTok; the user posts.
@@ -381,10 +381,10 @@ AFTER A NEW REEL: offer to proofread the subtitles (get_words, then fix_word for
 MAKE THE VIDEO: check_reel must be OK first. make_video takes a few minutes; then call check_video, look at the picture and say if it is ready to post or what you would fix; then show_in_finder and say she can AirDrop it to her phone.
 VIDEO FROM TEXT (no camera): make_story_video starts one with the computer voice from a script you write (the user's OK first); a reel with format "story" (get_reel says so) has scenes instead of footage, change them with set_story_scenes. The user's own voice sounds best: they record it on the page under "Film z tekstu".
 YOUTUBE (long videos, 20 to 40 min): a reel with format "long" (get_reel says so) is a YouTube video. It shows only picture, label and zoom effects; no hook, end card or Instagram caption. Use set_youtube for chapters (source seconds; first at 0, at least 3, 10 s or more apart, best every 2 to 5 minutes at a real topic change), title (max 100 chars, the search phrase first), description (2 to 4 short paragraphs in her voice, without the chapter list; it is added for you), name tag and switches. Read the video first with get_transcript. youtube_text gives the finished title + description to copy. make_thumbnail makes the 1280x720 thumbnail. make_clip on a long video makes a vertical Short (max 3 min) as a new reel; it is ready after a few minutes of analysis. make_video on a long video takes 20 to 40 minutes: start it, then use video_status.
-INSTAGRAM (before filming, after posting): for a reel idea, script or hooks, a caption check, a week plan, replies, DMs, carousels, stories or a profile check, call instagram_guide with the job and follow it. These tools work without Reel Studio open.
-If a tool says Reel Studio is not open, call open_reel_studio.`;
+INSTAGRAM (before filming, after posting): for a reel idea, script or hooks, a caption check, a week plan, replies, DMs, carousels, stories or a profile check, call instagram_guide with the job and follow it. These tools work without Klipownia open.
+If a tool says Klipownia is not open, call open_klipownia.`;
 
-const server = new McpServer({ name: 'reel-studio', version: '1.0.0' }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: 'klipownia', version: '1.0.0' }, { instructions: INSTRUCTIONS });
 
 type Extra = { _meta?: { progressToken?: string | number }; sendNotification: (n: { method: 'notifications/progress'; params: { progressToken: string | number; progress: number; total?: number; message?: string } }) => Promise<void> };
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
@@ -424,29 +424,29 @@ const progress = async (extra: Extra, value: number, message: string) => {
 
 // ----- open / list -----
 tool(
-  'open_reel_studio',
-  'Open the Reel Studio app on her computer (and wait until it is ready, up to 60 s). With a reel name, also show that reel in the editor page so she can watch your changes live.',
+  'open_klipownia',
+  'Open the Klipownia app on her computer (and wait until it is ready, up to 60 s). With a reel name, also show that reel in the editor page so she can watch your changes live.',
   { slug: z.string().optional().describe('Optional reel to show in the editor page.') },
   WRITE,
   async ({ slug }) => {
     let up = await isUp();
     if (!up) {
-      if (!IS_MAC && !IS_WIN) return 'Reel Studio is not running, and I can only start it on a Mac or Windows. Ask her to start Reel Studio.';
+      if (!IS_MAC && !IS_WIN) return 'Klipownia is not running, and I can only start it on a Mac or Windows. Ask her to start Klipownia.';
       if (IS_WIN) startServerWin();
-      else await openUrl('', 'Reel Studio');
+      else await openUrl('', 'Klipownia');
       for (let i = 0; i < 60 && !up; i++) {
         await sleep(1000);
         up = await isUp();
       }
-      if (!up) return 'I asked Reel Studio to start, but it did not answer within 60 seconds. Ask her to start Reel Studio (Mac: "Reel Studio" in the Dock; Windows: the Reel Studio shortcut) and wait a moment.';
+      if (!up) return 'I asked Klipownia to start, but it did not answer within 60 seconds. Ask her to start Klipownia (Mac: "Klipownia" in the Dock; Windows: the Klipownia shortcut) and wait a moment.';
     }
     if (slug) {
       await getProject(slug);
       const ok = await openUrl(`${ORIGIN}/#/p/${slug}`);
-      return ok ? `Reel Studio is open and shows the reel "${slug}".` : `Reel Studio is running. The reel page is ${ORIGIN}/#/p/${slug}`;
+      return ok ? `Klipownia is open and shows the reel "${slug}".` : `Klipownia is running. The reel page is ${ORIGIN}/#/p/${slug}`;
     }
     if (IS_MAC || IS_WIN) await openUrl(ORIGIN);
-    return 'Reel Studio is open.';
+    return 'Klipownia is open.';
   },
 );
 
@@ -854,7 +854,7 @@ tool(
   WRITE,
   async ({ slug, start, end, title }) => {
     const r = await api<{ slug: string; analysing?: boolean }>('POST', `/api/projects/${enc(slug)}/clip`, { start, end, title });
-    if (r.analysing) return `New vertical Short "${r.slug}" from the YouTube video. Reel Studio is preparing it now (a few minutes: crop around her face, subtitles, hook). Call get_reel on it later to improve its hook.`;
+    if (r.analysing) return `New vertical Short "${r.slug}" from the YouTube video. Klipownia is preparing it now (a few minutes: crop around her face, subtitles, hook). Call get_reel on it later to improve its hook.`;
     const p = await getProject(r.slug);
     return `New reel "${r.slug}" (${p.edit ? lengthOf(p.edit).toFixed(1) : '?'} s). Improve its hook with update_reel, then check_reel.`;
   },
@@ -1322,7 +1322,7 @@ tool(
   },
 );
 
-// The same ready requests as the buttons on the page, as a menu in Claude Desktop ("+" > Reel Studio).
+// The same ready requests as the buttons on the page, as a menu in Claude Desktop ("+" > Klipownia).
 for (const p of IG_PROMPTS) {
   const register = server.registerPrompt.bind(server) as unknown as (n: string, c: unknown, cb: (a: { topic?: string }) => unknown) => void;
   register(
@@ -1345,4 +1345,4 @@ for (const p of IG_PROMPTS) {
 
 const transport = new StdioServerTransport(process.stdin, mcpOut);
 await server.connect(transport);
-console.error('Reel Studio connector ready');
+console.error('Klipownia connector ready');

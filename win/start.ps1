@@ -1,4 +1,4 @@
-﻿# Reel Studio launcher for Windows. Starts the local server in the background if it is not running,
+﻿# Klipownia launcher for Windows. Starts the local server in the background if it is not running,
 # then opens the editor. The Desktop and Start menu shortcuts run this file hidden.
 param([switch]$NoBrowser)  # tests: start the server only
 $ErrorActionPreference = 'Stop'
@@ -13,9 +13,9 @@ $LogDir = Join-Path $Root 'logs'
 
 function Show-Message([string]$text) {
   Add-Type -AssemblyName PresentationFramework
-  [System.Windows.MessageBox]::Show($text, 'Reel Studio', 'OK', 'Warning') | Out-Null
+  [System.Windows.MessageBox]::Show($text, 'Klipownia', 'OK', 'Warning') | Out-Null
 }
-# Reel Studio answers /api/projects with a JSON list. Anything else on this port is not us.
+# Klipownia answers /api/projects with a JSON list. Anything else on this port is not us.
 function Test-Ours {
   try {
     $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Uri $Probe
@@ -32,13 +32,13 @@ if (-not (Test-Path (Join-Path $Root '.install-ok'))) {
 if (-not (Test-Ours)) {
   $busy = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
   if ($busy) {
-    Show-Message "Port $Port zajmuje inny program. Uruchom komputer ponownie i otwórz Reel Studio jeszcze raz.`n`nPort $Port is used by another program. Restart the PC, then open Reel Studio again."
+    Show-Message "Port $Port zajmuje inny program. Uruchom komputer ponownie i otwórz Klipownię jeszcze raz.`n`nPort $Port is used by another program. Restart the PC, then open Klipownia again."
     exit 1
   }
   $node = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
   if (-not $node) { $node = Join-Path $env:ProgramFiles 'nodejs\node.exe' }
   if (-not (Test-Path $node)) {
-    Show-Message "Nie znaleziono Node.js. Poproś Petera, żeby uruchomił instalację jeszcze raz.`n`nNode.js was not found. Ask Peter to run the installer again."
+    Show-Message "Nie znaleziono Node.js. Wklej jeszcze raz linię instalacyjną z maila po zakupie.`n`nNode.js was not found. Paste the install line from the purchase email again."
     exit 1
   }
   # Tools the server calls (ffmpeg from winget, claude) may not be on PATH in a shortcut's environment.
@@ -66,14 +66,16 @@ if (-not (Test-Ours)) {
   New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
   # One node process (tsx as a loader, not the tsx CLI that starts a second node), so Stop can end it cleanly.
   $loader = ([Uri](Join-Path $Root 'node_modules\tsx\dist\loader.mjs')).AbsoluteUri
-  Start-Process -FilePath $node -ArgumentList @('--import', $loader, 'server/index.ts') -WorkingDirectory $Root -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $LogDir 'ReelStudio.log') -RedirectStandardError (Join-Path $LogDir 'ReelStudio-errors.log')
+  $server = Start-Process -FilePath $node -ArgumentList @('--import', $loader, 'server/index.ts') -WorkingDirectory $Root -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput (Join-Path $LogDir 'Klipownia.log') -RedirectStandardError (Join-Path $LogDir 'Klipownia-errors.log')
+  # No sleep while the server runs, so a long render is not cut off. Ends by itself when node ends.
+  Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSScriptRoot\keepawake.ps1`"", '-NodePid', $server.Id)
   for ($i = 0; $i -lt 60; $i++) {
     Start-Sleep -Milliseconds 500
     if (Test-Ours) { break }
   }
   if (-not (Test-Ours)) {
-    Show-Message "Reel Studio nie chce się uruchomić. Wyślij Peterowi pliki z folderu:`n$LogDir`n`nReel Studio could not start. Send Peter the files in the folder above."
+    Show-Message "Klipownia nie chce się uruchomić. Wyślij nam pliki z folderu (odpowiedz na mail z zakupem):`n$LogDir`n`nKlipownia could not start. Send us the files in the folder above (reply to the purchase email)."
     exit 1
   }
 }

@@ -14,7 +14,7 @@
       "Edit",
       "Glob",
       "Grep",
-      "Bash(open -a \"Reel Studio\")",
+      "Bash(open -a \"Klipownia\")",
       "Bash(open http://localhost:8787*)",
       "Bash(.venv/bin/python .claude/skills/ig-*)",
       "Bash(.venv/Scripts/python .claude/skills/ig-*)",

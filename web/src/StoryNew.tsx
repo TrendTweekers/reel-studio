@@ -236,8 +236,8 @@ export function StoryNew({ mode: kind = 'creator' }: { mode?: StoryMode }) {
           ← {t('back')}
         </button>
         <div className="brand">
-          <span className="brand-mark">R</span>
-          <span className="brand-name">Reel Studio</span>
+          <span className="brand-mark">K</span>
+          <span className="brand-name">Klipownia</span>
         </div>
         <TopRight />
       </header>

@@ -47,8 +47,8 @@ export function Setup() {
     <div className="home setup">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">R</span>
-          <span className="brand-name">Reel Studio</span>
+          <span className="brand-mark">K</span>
+          <span className="brand-name">Klipownia</span>
         </div>
         <LangSwitch />
       </header>
@@ -243,7 +243,7 @@ export function LogoPick({ value, onChange }: { value?: string; onChange: (f: st
   );
 }
 
-// Is Claude Code on this Mac? Reel Studio uses her own Claude subscription through it.
+// Is Claude Code on this Mac? Klipownia uses her own Claude subscription through it.
 export function ClaudeCheck() {
   const { t } = useT();
   const [state, setState] = useState<ClaudeState | 'unknown' | null>(null);

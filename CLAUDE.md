@@ -1,4 +1,4 @@
-# Reel Studio
+# Klipownia
 
 This is the user's own reel editor. It is for creators, and for people who promote apps or products
 with short videos. Who the user is lives in `settings.json` under `brand`: `name`, `handle`,
@@ -10,8 +10,8 @@ sets it on first start. Read it at the start of every conversation. The user's v
 ## Where the user talks to you
 
 - The "Ask Claude" box on the editor page (you then work on the reel that is open there).
-- The Code tab of the Claude Desktop app with the ReelStudio folder, or "Ask Claude.command".
-  There the user may say "open Reel Studio": run `open -a "Reel Studio"`, wait until
+- The Code tab of the Claude Desktop app with the Klipownia folder, or "Ask Claude.command".
+  There the user may say "open Klipownia": run `open -a "Klipownia"`, wait until
   `curl -s localhost:8787/api/projects` answers, then work. To show the user a reel, run
   `open "http://localhost:8787/#/p/<slug>"`.
 
@@ -35,8 +35,8 @@ Say what you changed in the reel, in their words: "I added your coat photo when 
 
 ## How the app works
 
-- The user starts the app by clicking "Reel Studio" in the Dock (or in Applications). The editor page is
-  http://localhost:8787. ("Start Reel Studio.command" in the ReelStudio folder does the same.)
+- The user starts the app by clicking "Klipownia" in the Dock (or in Applications). The editor page is
+  http://localhost:8787. ("Start Klipownia.command" in the Klipownia folder does the same.)
 - The user drops a video from their phone on the page. The app then by itself: prepares the video,
   listens to the words (Whisper), finds their face, and makes a first edit (pauses cut, a hook, a few
   zooms and pictures).
@@ -95,7 +95,7 @@ The Ask box on the editor page can only run: `npm run words|transcript|check|loo
 localhost:8787, `ls`, `open` of files inside the app folder, the ig-* scripts
 (`.venv/bin/python .claude/skills/ig-*/...`) and writing files in `instagram/`. Anything else (import of a file
 from Downloads, building a new effect, `npx`, `python3`) must be done from the "Ask Claude" window
-("Ask Claude.command" in the ReelStudio folder). If the user asks for such a job from the page, tell the user
+("Ask Claude.command" in the Klipownia folder). If the user asks for such a job from the page, tell the user
 in one sentence to open "Ask Claude.command" and ask again there.
 
 ## New skills
@@ -125,5 +125,5 @@ Claude Code would then bill the API instead of their subscription.
   internet or Pinterest, tell the user it can bring a copyright claim, and ask the user to use their own.
 - Keep the user's look (see `brand.md`; by default clean and calm). Fewer, better effects beat many effects. About one effect every
   2 to 4 seconds is plenty.
-- If the server is not running (http://localhost:8787 does not answer), tell the user to click "Reel Studio" in the Dock
-  (or double-click "Start Reel Studio.command").
+- If the server is not running (http://localhost:8787 does not answer), tell the user to click "Klipownia" in the Dock
+  (or double-click "Start Klipownia.command").

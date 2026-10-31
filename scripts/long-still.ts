@@ -1,5 +1,5 @@
 // Look at a long (YouTube) video: stills and short clips of the "Long" composition, and thumbnails.
-// Needs Reel Studio running (media comes from :8787).
+// Needs Klipownia running (media comes from :8787).
 //   npx tsx scripts/long-still.ts <slug> [--at 2,17.5,30] [--clip 10,10] [--out dir] [--edit file.json]
 //                                [--scale 0.5] [--concurrency 50%] [--plain] [--music-url url/]
 //                                [--thumb <source s> ["title"] ["accent"]]

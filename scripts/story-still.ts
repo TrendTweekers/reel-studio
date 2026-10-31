@@ -1,5 +1,5 @@
 // Render a story video (edit.format 'story') on a real project's words and voice, to look at it.
-// Needs Reel Studio running (media comes from :8787).
+// Needs Klipownia running (media comes from :8787).
 //   npx tsx scripts/story-still.ts <slug> <patch.json> [--at 1.5,4,9] [--scenes] [--bg cream|ink|accent]
 //                                  [--out dir] [--video 3,12] [--keep]
 // patch.json = an Edit patch merged over the project's edit.json (format 'story' + story settings).

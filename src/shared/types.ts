@@ -221,7 +221,7 @@ export type StorySettings = {
   background: 'cream' | 'ink' | 'accent'; // the scenes' colour world (accent = style.accentColor)
   scenes: StoryScene[];
 };
-// Who uses this copy of Reel Studio (settings.json "brand"). Set once on the first start; Claude reads
+// Who uses this copy of Klipownia (settings.json "brand"). Set once on the first start; Claude reads
 // brand.md for lasting wishes, this holds the facts the page and the videos need.
 export type BrandSettings = {
   name: string; // "Paulina Lipska" or a product name

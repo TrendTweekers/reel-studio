@@ -168,7 +168,7 @@ export const UiWorld: React.FC<{ e: TimedEffect }> = ({ e }) => {
           </div>
           <div style={{ flex: 1, minWidth: 0, fontFamily: subFont }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 30 }}>
-              <span style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>{(props.brand?.name ?? '').split(' ')[0] || 'Reel Studio'}</span>
+              <span style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>{(props.brand?.name ?? '').split(' ')[0] || 'Klipownia'}</span>
               <span style={{ opacity: 0.45, fontSize: 24 }}>{pl ? 'teraz' : 'now'}</span>
             </div>
             <div style={{ fontSize: 36, lineHeight: 1.2, marginTop: 4, opacity: 0.88, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
