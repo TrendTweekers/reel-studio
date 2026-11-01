@@ -7,7 +7,7 @@ import { errText, fmt, num, useT, type StrKey } from './i18n';
 import { AccentPick, BrandExtraFields, ClaudeCheck, LogoPick, UsePick } from './Setup';
 import { AUDIO_ACCEPT, LevelMeter, RecErrorLine, useRecorder } from './StoryNew';
 import { APP_VERSION } from './version';
-import { Check, Chips, fmtTime } from './ui';
+import { Check, Chips, fmtTime, Wordmark } from './ui';
 
 // Settings: who you are, language, the computer voice, the licence key, about.
 
@@ -29,8 +29,7 @@ export function Settings({ section }: { section: string | null }) {
           ← {t('back')}
         </button>
         <div className="brand">
-          <span className="brand-mark">K</span>
-          <span className="brand-name">Klipownia</span>
+          <Wordmark />
         </div>
         <TopRight />
       </header>

@@ -5,7 +5,7 @@ import { go, TopRight } from './App';
 import { atHandle, useBrand } from './brand';
 import type { StyleItem } from './api';
 import { styleName } from './StylePanel';
-import { Check, HelpTip } from './ui';
+import { Check, HelpTip, Wordmark } from './ui';
 
 const STEPS: Step[] = ['normalize', 'transcribe', 'faces', 'autoedit', 'ready'];
 // A video from text has no face to find. 'voice' (the computer voice reads the script) comes first,
@@ -180,8 +180,7 @@ export function Home() {
     <div className="home">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">K</span>
-          <span className="brand-name">Klipownia</span>
+          <Wordmark />
         </div>
         <TopRight />
       </header>

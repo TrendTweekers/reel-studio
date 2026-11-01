@@ -8,7 +8,7 @@ import { outputDuration, outputWords } from '../../src/shared/time';
 import { api, HttpError, type LookPatch, type LookStillReq, type ProjectDetail } from './api';
 import { fmt, LOOK_CARDS, useT, type StrKey } from './i18n';
 import { go, TopRight } from './App';
-import { Check } from './ui';
+import { Check, Wordmark } from './ui';
 
 type Tab = 'palettes' | 'fonts' | 'captions' | 'effects' | 'transitions' | 'notes';
 const TABS: Tab[] = ['palettes', 'fonts', 'captions', 'effects', 'transitions', 'notes'];
@@ -290,8 +290,7 @@ export function LookBuilder({ slug }: { slug: string }) {
           ← {t('lookBackReel')}
         </button>
         <div className="brand">
-          <span className="brand-mark">K</span>
-          <span className="brand-name">{t('lookTitle')}</span>
+          <Wordmark name={t('lookTitle')} />
         </div>
         <TopRight />
       </header>

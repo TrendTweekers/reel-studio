@@ -5,7 +5,7 @@ import { errText, fmt, num, useT, type StrKey } from './i18n';
 import { go, TopRight } from './App';
 import { PictureGrid } from './PictureGrid';
 import { storySwatches } from './storyLooks';
-import { Chips, fmtTime } from './ui';
+import { Chips, fmtTime, Wordmark } from './ui';
 
 // "Film z tekstu": a video with no camera. Topic -> Claude writes a script -> she edits it -> a voice
 // (her recording, an audio file, or the computer voice) -> the server makes the video.
@@ -233,8 +233,7 @@ export function StoryNew({ mode: kind = 'creator' }: { mode?: StoryMode }) {
           ← {t('back')}
         </button>
         <div className="brand">
-          <span className="brand-mark">K</span>
-          <span className="brand-name">Klipownia</span>
+          <Wordmark />
         </div>
         <TopRight />
       </header>

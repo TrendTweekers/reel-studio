@@ -91,3 +91,14 @@ export function HelpTip({ text }: { text: string }) {
     </span>
   );
 }
+
+// The wordmark. A designed mark will live at /logo/mark.svg; until it exists the <img> hides itself.
+export function Wordmark({ name = 'Klipownia' }: { name?: string }) {
+  const [mark, setMark] = useState(true);
+  return (
+    <span className="wordmark">
+      {mark && <img className="wordmark-mark" src="/logo/mark.svg" alt="" aria-hidden onError={() => setMark(false)} />}
+      <span className="brand-name">{name}</span>
+    </span>
+  );
+}

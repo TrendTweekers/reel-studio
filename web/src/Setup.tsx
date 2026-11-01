@@ -5,6 +5,7 @@ import { ACCENTS, useBrand } from './brand';
 import { go, LangSwitch } from './App';
 import { fmt, useT, type StrKey } from './i18n';
 import { PictureGrid } from './PictureGrid';
+import { Wordmark } from './ui';
 
 // The first start: five calm screens, one question each. Saved at the end with done = true.
 
@@ -47,8 +48,7 @@ export function Setup() {
     <div className="home setup">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">K</span>
-          <span className="brand-name">Klipownia</span>
+          <Wordmark />
         </div>
         <LangSwitch />
       </header>
