@@ -112,6 +112,8 @@ param(
       }
       & $runGit @('-C', $Root, 'fetch', '-q', $Source, 'HEAD')
       & $runGit @('-C', $Root, 'reset', '-q', '--hard', 'FETCH_HEAD')
+      # A git install is ours or Paulina's: no licence key, no trial (the server reads this file).
+      Set-Content -Path (Join-Path $Root '.dev-install') -Value '' -Encoding ASCII
       foreach ($k in $KeepFiles) {
         $b = Join-Path $tmp $k
         if (Test-Path $b) { Copy-Item $b (Join-Path $Root $k) -Force }
@@ -235,6 +237,7 @@ param(
         New-Item -ItemType Directory -Force -Path (Join-Path $Root $d) | Out-Null
       }
       Set-Content -Path (Join-Path $Root '.version') -Value $rel.version -Encoding ASCII
+      Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root '.dev-install') # a bought copy has a key, not the dev marker
       Remove-Item -Recurse -Force $work
 
       # Save the key where Klipownia reads it, so updates work without asking again.

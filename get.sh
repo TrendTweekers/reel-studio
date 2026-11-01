@@ -68,6 +68,8 @@ if [ -n "$SOURCE" ]; then
   rm -rf "$KEEP_TMP"
   # The app reads .version before git; a zip install's old one would hide the git version.
   rm -f "$ROOT/.version"
+  # A git install is ours or Paulina's: no licence key, no trial (the server reads this file).
+  : > "$ROOT/.dev-install"
   echo "Wersja / Version: $(git -C "$ROOT" rev-parse --short HEAD)"
 else
   # ---------- Licence path (buyers): the key decides what may be downloaded.
@@ -161,6 +163,7 @@ else
   rsync -a "${EXCL[@]}" "$SRC/" "$ROOT/"
   mkdir -p "$ROOT/projects" "$ROOT/board" "$ROOT/assets/music" "$ROOT/styles" "$ROOT/instagram/drafts"
   printf '%s\n' "$VERSION" > "$ROOT/.version"
+  rm -f "$ROOT/.dev-install" # a bought copy has a key, not the dev marker
 
   # Save the key where Klipownia reads it, so updates work without asking again. The app activates it
   # on first start (this computer gets its slot then). Needs node or a real python3; before Homebrew a

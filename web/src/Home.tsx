@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, mediaUrls, upload, type Format, type ProjectSummary, type Status, type Step } from './api';
 import { errText, fmt, useT, type StrKey } from './i18n';
 import { go, TopRight } from './App';
+import { LicenceBanner } from './LicenceBanner';
 import { atHandle, useBrand } from './brand';
 import type { StyleItem } from './api';
 import { styleName } from './StylePanel';
@@ -184,6 +185,7 @@ export function Home() {
         </div>
         <TopRight />
       </header>
+      <LicenceBanner />
 
       <main className="home-main">
         <div className="home-hello">

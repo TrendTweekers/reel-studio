@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BrandSettings } from '../../src/shared/types';
 import { api, HttpError, ServerDownError, type LicenceState, type UpdateState, type VoiceState } from './api';
+import { BUY_URL, RENEW_URL, setLicence } from './LicenceBanner';
 import { useBrand } from './brand';
 import { go, TopRight } from './App';
 import { errText, fmt, num, useT, type StrKey } from './i18n';
@@ -133,6 +134,55 @@ function LanguageSection() {
   );
 }
 
+// The plan in plain words: what she has, until when, and what to do next.
+function PlanLine({ lic }: { lic: LicenceState }) {
+  const { t, lang } = useT();
+  if (!lic.access) return null;
+  const date = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString(lang === 'pl' ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+  const planName = lic.plan === 'monthly' ? t('licPlanMonthly') : lic.plan === 'yearly' ? t('licPlanYearly') : lic.plan && lic.plan !== 'dev' ? lic.plan : '';
+  const plan = planName ? ` (${planName})` : '';
+  const n = lic.daysLeft ?? 0;
+  const link = (href: string, label: string) => (
+    <>
+      {' '}
+      <a href={href} target="_blank" rel="noreferrer">
+        {label}
+      </a>
+    </>
+  );
+  if (lic.dev) return <p className="muted small lic-plan">{t('licFullDev')}</p>;
+  if (lic.access === 'full') return <p className="lic-plan">{lic.expiresAt ? fmt(t('licFullUntil'), { plan, date: date(lic.expiresAt) }) : fmt(t('licFullNoEnd'), { plan })}</p>;
+  if (lic.access === 'grace')
+    return (
+      <p className="lic-plan error-text">
+        {fmt(t('licGraceAt'), { n, date: date(lic.expiresAt ?? lic.lapsedAt) })}
+        {link(RENEW_URL, t('licRenew'))}
+      </p>
+    );
+  if (lic.access === 'blocked')
+    return (
+      <p className="lic-plan error-text">
+        {t('licBlockedAt')}
+        {link(RENEW_URL, t('licRenew'))}
+      </p>
+    );
+  if (lic.access === 'trial') {
+    const end = new Date(Date.now() + n * 86_400_000).toISOString();
+    return (
+      <p className="lic-plan">
+        {fmt(t('licTrialAt'), { n, date: date(end) })}
+        {link(BUY_URL, t('licBuy'))}
+      </p>
+    );
+  }
+  return (
+    <p className="lic-plan error-text">
+      {t('licTrialEndedAt')}
+      {link(BUY_URL, t('licBuy'))}
+    </p>
+  );
+}
+
 function LicenceSection() {
   const { t } = useT();
   const [lic, setLic] = useState<LicenceState | null>(null);
@@ -142,6 +192,7 @@ function LicenceSection() {
     api.licence().then(
       (l) => {
         setLic(l);
+        setLicence(l);
         setKey(l.key ?? '');
       },
       (e) => setState(e instanceof HttpError && e.status === 404 ? 'missing' : 'idle'),
@@ -152,6 +203,7 @@ function LicenceSection() {
     try {
       const l = await api.saveLicence(key.trim());
       setLic(l);
+      setLicence(l); // the banners on Home and Editor follow at once
       setKey(l.key ?? '');
       setState('idle');
     } catch (e) {
@@ -161,8 +213,8 @@ function LicenceSection() {
   // The server shows the key masked ("ABCD…WXYZ"); the field keeps what she typed until she changes it.
   const same = !!lic?.key && (key.trim() === lic.key || (key.trim().startsWith(lic.key.slice(0, 4)) && key.trim().endsWith(lic.key.slice(-4))));
   const saved = same && (lic?.status === 'saved' || lic?.status === 'valid');
-  const bad = same && lic && ['invalid', 'revoked', 'limit'].includes(lic.status);
-  const down = same && lic?.status === 'down';
+  const bad = same && lic && ['invalid', 'revoked', 'expired', 'limit'].includes(lic.status);
+  const down = same && (lic?.status === 'down' || !!lic?.unreachable);
   const [upd, setUpd] = useState<UpdateState | null>(null);
   const [updState, setUpdState] = useState<'idle' | 'checking' | 'error'>('idle');
   const checkUpdate = async () => {
@@ -188,10 +240,11 @@ function LicenceSection() {
         </button>
       </div>
       {saved && <p className="ok-line">✓ {lic?.status === 'valid' ? t('licenceValid') : t('licenceSaved')}{lic?.email ? ` · ${lic.email}` : ''}</p>}
-      {bad && <p className="error-text">{t(lic.status === 'limit' ? 'licenceLimit' : lic.status === 'revoked' ? 'licenceRevoked' : 'licenceInvalid')}</p>}
+      {bad && <p className="error-text">{t(lic.status === 'limit' ? 'licenceLimit' : lic.status === 'revoked' ? 'licenceRevoked' : lic.status === 'expired' ? 'licenceExpired' : 'licenceInvalid')}</p>}
       {down && <p className="muted small">{t('licenceDown')}</p>}
       {state === 'error' && <p className="error-text">{t('licenceFailed')}</p>}
       {state === 'missing' && <p className="muted small">{t('licenceNoServer')}</p>}
+      {lic && <PlanLine lic={lic} />}
       {lic?.status === 'valid' && (
         <div className="licence-row" style={{ marginTop: 14 }}>
           <button className="btn" onClick={() => void checkUpdate()} disabled={updState === 'checking'}>

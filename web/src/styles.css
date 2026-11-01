@@ -6368,3 +6368,41 @@ em.muted {
     gap: 6px;
   }
 }
+
+/* ---------- licence strip (trial, lapsed subscription, stopped) ---------- */
+.lic-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  padding: 7px 16px;
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-align: center;
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.lic-banner.lic-grace {
+  background: #fbf1dc;
+}
+.lic-banner.lic-blocked,
+.lic-banner.lic-trial_ended {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-bottom-color: transparent;
+}
+.lic-link {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.top-make.stopped {
+  opacity: 0.85;
+}
+.lic-plan {
+  margin: 10px 0 0;
+}

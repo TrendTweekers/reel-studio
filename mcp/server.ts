@@ -98,6 +98,13 @@ async function api<T = unknown>(method: string, url: string, body?: unknown, hea
   return json as T;
 }
 const enc = encodeURIComponent;
+// Making new videos needs an active subscription or trial; ask first, so she hears that and not another problem.
+async function licenceStop(): Promise<string | null> {
+  const l = await api<{ access?: string }>('GET', '/api/settings/licence').catch(() => null);
+  if (l?.access === 'blocked') return 'Not started. Your Klipownia subscription has ended. Renew it to make new videos (Settings, Licence key). Your projects and finished videos are still here.';
+  if (l?.access === 'trial_ended') return 'Not started. Your 14-day trial has ended. Buy Klipownia at https://klipownia.pl to make new videos. Your projects and finished videos are still here.';
+  return null;
+}
 const isUp = async () => {
   try {
     const r = await fetch(`${ORIGIN}/api/projects`, { signal: AbortSignal.timeout(2000) });
@@ -883,6 +890,8 @@ tool(
   },
   WRITE,
   async ({ title, script, language, background }) => {
+    const stop = await licenceStop();
+    if (stop) return stop;
     const v = await api<{ ready: boolean; installing: boolean }>('GET', '/api/story/voice');
     if (!v.ready) throw new UserError(v.installing ? 'The computer voice is still downloading. Try again in a few minutes.' : 'The computer voice is not installed yet. On the page: Film z tekstu, then Głos komputera, then download it once (about 4 GB).');
     const form = new FormData();
@@ -893,7 +902,8 @@ tool(
     } catch {
       throw new NotOpen(NOT_OPEN);
     }
-    const j = (await res.json().catch(() => ({}))) as { slug?: string; error?: string };
+    const j = (await res.json().catch(() => ({}))) as { slug?: string; error?: string; code?: string };
+    if (j.code === 'licence') return `Not started. ${j.error ?? 'Klipownia needs an active subscription to make new videos.'}`;
     if (!res.ok || !j.slug) throw new UserError(j.error ?? `Could not start (HTTP ${res.status})`);
     return `Started "${title}" as ${j.slug}. The voice and the first edit take a few minutes; then Claude plans the scenes. She can watch it on the page.`;
   },
@@ -1082,6 +1092,8 @@ tool(
   { slug: slugArg, variant: z.enum(['instagram', 'tiktok']).optional() },
   WRITE,
   async ({ slug, variant }, extra) => {
+    const stop = await licenceStop();
+    if (stop) return stop;
     const ps = await problems(slug);
     if (ps.length) return `Not started. Fix these first:\n${problemText(ps)}`;
     const before = await api<RenderState>('GET', `/api/projects/${enc(slug)}/render`);
@@ -1094,7 +1106,9 @@ tool(
         const started = await api<{ warnings?: { text: string }[] }>('POST', `/api/projects/${enc(slug)}/render`, { ...(variant && variant !== 'instagram' ? { variant } : {}), check: false }, {}, 150000);
         warnings = started.warnings ?? [];
       } catch (e) {
-        const b = (e as ApiError).body as { code?: string; problems?: { text: string }[]; warnings?: { text: string }[] } | null;
+        const b = (e as ApiError).body as { code?: string; error?: string; problems?: { text: string }[]; warnings?: { text: string }[] } | null;
+        // Subscription ended or trial over: say it plainly, nothing to fix in the reel.
+        if ((e as ApiError).status === 409 && b?.code === 'licence') return `Not started. ${b.error ?? 'Klipownia needs an active subscription to make new videos.'}`;
         if ((e as ApiError).status !== 409 || b?.code !== 'preflight') throw e;
         const soft = b.warnings?.length ? `\nAlso worth a look:\n${b.warnings.map((w) => `- ${w.text}`).join('\n')}` : '';
         return `Not started. The check before making the video found problems. Fix these first, then call make_video again:\n${(b.problems ?? []).map((p) => `- ${p.text}`).join('\n')}${soft}`;

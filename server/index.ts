@@ -671,7 +671,7 @@ app.get('/api/projects', (_req, res) => {
 
 // Upload a new video (field "video"). The name comes from the X-File-Name header (URI-encoded), or
 // else from the file name in the upload. An upload that stops half-way leaves nothing behind.
-app.post('/api/projects', (req, res) => {
+app.post('/api/projects', needAccess, (req, res) => {
   const header = req.headers['x-file-name'] ? safeDecode(String(req.headers['x-file-name'])) : null;
   let slug: string | null = null;
   let accepted = false;
@@ -1209,7 +1209,7 @@ app.post('/api/projects/:slug/preflight', async (req, res) => {
   }
 });
 
-app.post('/api/projects/:slug/render', async (req, res) => {
+app.post('/api/projects/:slug/render', needAccess, async (req, res) => {
   const slug = req.params.slug;
   const variant = variantOf(req.body?.variant);
   const r = await queueRender(slug, variant, { noCheck: req.body?.check === false });
@@ -1487,10 +1487,33 @@ app.get('/api/settings/claude', (_req, res) => {
   res.json({ installed: version !== null, version, loggedIn: version === null ? null : creds ? true : null });
 });
 // ---- Licence (Klipownia API, see ~/klipownia-api docs/client-flow.md) ----
-// The key is checked with the shop through our API: activate once per machine, then validate daily.
-// A lapsed or unreachable licence never disables the tool; it only stops updates.
+// Klipownia is a subscription. The key is checked with the shop through our API: activate once per
+// machine, then validate daily. No key = 14-day trial. A key the shop refuses gets 7 days of grace,
+// then new videos stop (render, story, upload, Ask). Old projects, finished videos and settings
+// always keep working. An unreachable shop never changes what she can do.
 const LICENCE_API = process.env.KLIPOWNIA_API ?? 'https://api.klipownia.pl';
-type LicenceState = { key: string; activationId?: string; status: 'valid' | 'invalid' | 'revoked' | 'limit' | 'down' | 'none'; email?: string; checkedAt?: string; error?: string };
+// Peter's and Paulina's git installs. Only this env var; no other way around the licence.
+// A dev install (ours and Paulina's, installed from git with --source) never needs a key: the
+// installer writes .dev-install. Buyers get the app as a zip from the API and never have that file.
+const DEV_MODE = process.env.KLIPOWNIA_DEV === '1' || fs.existsSync(path.join(ROOT, '.dev-install'));
+const DAY = 86_400_000;
+const TRIAL_DAYS = 14;
+const GRACE_DAYS = 7;
+type LicenceStatus = 'valid' | 'invalid' | 'revoked' | 'expired' | 'limit' | 'down' | 'none';
+type LicenceState = {
+  key: string;
+  activationId?: string;
+  status: LicenceStatus;
+  email?: string;
+  checkedAt?: string;
+  error?: string;
+  expiresAt?: string | null; // the shop's date for the key; null = no end date
+  plan?: string;
+  lapsedAt?: string; // first time the shop refused a key on this machine; cleared when one is valid again
+  validAt?: string; // last time the shop said valid; grace is only for machines that once had a real key
+  unreachable?: boolean; // the last check could not reach the shop (the verdict above is the old one)
+};
+export type Access = 'full' | 'grace' | 'blocked' | 'trial' | 'trial_ended';
 const machineId = () => crypto.createHash('sha256').update(`${os.hostname()}|${os.userInfo().username}|${os.platform()}`).digest('hex').slice(0, 24);
 const licenceState = (): LicenceState => {
   const st = readJson<{ licence?: string | LicenceState }>(SETTINGS, {}).licence;
@@ -1499,52 +1522,145 @@ const licenceState = (): LicenceState => {
   return st;
 };
 const saveLicence = (st: LicenceState | null) => writeJson(SETTINGS, { ...readJson<Record<string, unknown>>(SETTINGS, {}), licence: st ?? undefined });
+// The trial starts at the first server start; written once, never moved.
+const installedAt = (): string => {
+  const cur = readJson<Record<string, unknown>>(SETTINGS, {});
+  if (typeof cur.installedAt === 'string' && !Number.isNaN(Date.parse(cur.installedAt))) return cur.installedAt;
+  const now = new Date().toISOString();
+  writeJson(SETTINGS, { ...cur, installedAt: now });
+  return now;
+};
+installedAt();
+const daysUntil = (endMs: number) => Math.max(0, Math.ceil((endMs - Date.now()) / DAY));
+const accessOf = (st: LicenceState): { access: Access; daysLeft?: number } => {
+  if (DEV_MODE) return { access: 'full' };
+  const trial = () => {
+    const end = Date.parse(installedAt()) + TRIAL_DAYS * DAY;
+    return Date.now() < end ? { access: 'trial' as const, daysLeft: daysUntil(end) } : { access: 'trial_ended' as const, daysLeft: 0 };
+  };
+  if (!st.key) return trial();
+  if (st.key.startsWith('DEV-')) return trial(); // a dev key only works with KLIPOWNIA_DEV=1 (handled above)
+  // A date passing locally is not a verdict: a renewal moves it on the shop's side. The re-check asks soon.
+  if (st.status === 'valid') return { access: 'full' };
+  // Lapsed: grace counts from the first refusal. Only for a machine that once had a real key,
+  // so typing a made-up key cannot buy 7 more days after the trial.
+  // 'down' = a new key saved while the shop was unreachable: keep the access this machine last had.
+  if (st.status === 'down' && st.validAt && !st.lapsedAt) return { access: 'full' };
+  if (['invalid', 'revoked', 'expired', 'limit', 'down'].includes(st.status) && st.validAt && st.lapsedAt) {
+    const end = Date.parse(st.lapsedAt) + GRACE_DAYS * DAY;
+    return Date.now() < end ? { access: 'grace', daysLeft: daysUntil(end) } : { access: 'blocked', daysLeft: 0 };
+  }
+  // Never confirmed (refused, or saved while the shop was down): the trial still decides.
+  return trial();
+};
+const accessNow = () => accessOf(licenceState());
+const LICENCE_MSG: Record<'blocked' | 'trial_ended', string> = {
+  blocked: 'Your Klipownia subscription has ended. Renew it to make new videos. Your projects and finished videos are still here.',
+  trial_ended: 'Your 14-day trial has ended. Buy Klipownia to make new videos. Your projects and finished videos are still here.',
+};
+// Gate for making new videos only (render, story, upload, Ask). Everything else stays open.
+// A function declaration: the routes above use it before this line runs.
+function needAccess<P>(_req: express.Request<P>, res: express.Response, next: express.NextFunction) {
+  const { access } = accessNow();
+  if (access === 'blocked' || access === 'trial_ended') {
+    res.status(409).json({ code: 'licence', access, error: LICENCE_MSG[access] });
+    return;
+  }
+  next();
+}
 const licenceCall = async (route: string, body: Record<string, unknown>) => {
   const r = await fetch(`${LICENCE_API}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (r.status === 503) throw new Error('down');
-  return j as { ok?: boolean; activation_id?: string; status?: string; customer_email?: string; error?: string };
+  return j as { ok?: boolean; activation_id?: string; status?: string; customer_email?: string; error?: string; expires_at?: string | null; plan?: string };
 };
+const refusal = (s: string | undefined): LicenceStatus => (s === 'limit' || s === 'revoked' || s === 'expired' ? s : 'invalid');
+// One check with the shop. lapsedAt and validAt carry over from the old state (also across a key change).
 const checkLicence = async (key: string, activationId?: string): Promise<LicenceState> => {
   const now = new Date().toISOString();
+  const old = licenceState();
+  const keep = { lapsedAt: old.lapsedAt, validAt: old.validAt };
+  const valid = (aid: string | undefined, email: string | undefined, expiresAt: string | null | undefined, plan: string | undefined): LicenceState => ({
+    key, activationId: aid, status: 'valid', email, checkedAt: now, expiresAt: expiresAt ?? null, plan, validAt: now, lapsedAt: undefined,
+  });
+  const lapsed = (status: LicenceStatus, aid: string | undefined, error: string | undefined, expiresAt: string | null | undefined): LicenceState => ({
+    key, activationId: aid, status, checkedAt: now, error, expiresAt: expiresAt ?? (old.key === key ? old.expiresAt : null), plan: old.key === key ? old.plan : undefined,
+    validAt: keep.validAt, lapsedAt: keep.lapsedAt ?? now,
+  });
+  // No validAt for a dev key, so it never counts as a real licence once the env var is gone.
+  if (DEV_MODE && key.startsWith('DEV-')) return { key, status: 'valid', checkedAt: now, plan: 'dev', expiresAt: null, ...keep };
   try {
     if (!activationId) {
       const a = await licenceCall('/v1/license/activate', { key, machine: { id: machineId(), name: os.hostname(), platform: process.platform } });
-      if (!a.ok) return { key, status: a.error === 'limit' ? 'limit' : a.error === 'revoked' ? 'revoked' : 'invalid', checkedAt: now, error: a.error };
-      return { key, activationId: a.activation_id, status: 'valid', email: a.customer_email, checkedAt: now };
+      if (!a.ok) return lapsed(refusal(a.error), undefined, a.error, a.expires_at);
+      return valid(a.activation_id, a.customer_email, a.expires_at, a.plan);
     }
     const v = await licenceCall('/v1/license/validate', { key, activation_id: activationId });
-    const status = v.ok ? 'valid' : v.status === 'revoked' ? 'revoked' : v.status === 'limit' ? 'limit' : 'invalid';
-    return { key, activationId, status, email: v.customer_email, checkedAt: now, error: v.ok ? undefined : v.error };
+    if (v.ok) return valid(activationId, v.customer_email, v.expires_at, v.plan);
+    return lapsed(refusal(v.status), activationId, v.error, v.expires_at);
   } catch {
-    // The shop is unreachable: keep what we knew, say "down". Never punish the user for our outage.
-    const old = licenceState();
-    return { ...old, key, activationId, status: old.status === 'valid' ? 'valid' : 'down', error: 'down' };
+    // The shop is unreachable: keep the last verdict, so what she can do does not change. Never punish her for our outage.
+    if (old.key === key && old.status !== 'none' && old.status !== 'down') return { ...old, activationId: activationId ?? old.activationId, unreachable: true, error: 'down' };
+    return { key, activationId, status: 'down', error: 'down', ...keep };
   }
 };
-const publicLicence = (st: LicenceState) => ({ key: st.key ? `${st.key.slice(0, 4)}…${st.key.slice(-4)}` : null, status: st.status, email: st.email, checkedAt: st.checkedAt, error: st.error });
-app.get('/api/settings/licence', (_req, res) => res.json(publicLicence(licenceState())));
+const publicLicence = (st: LicenceState) => {
+  const { access, daysLeft } = accessOf(st);
+  return {
+    key: st.key ? `${st.key.slice(0, 4)}…${st.key.slice(-4)}` : null,
+    status: st.status,
+    // The shop did not answer last time; status is still the last real verdict.
+    unreachable: st.unreachable || st.status === 'down' || undefined,
+    email: st.email,
+    checkedAt: st.checkedAt,
+    error: st.error,
+    access,
+    expiresAt: st.expiresAt ?? null,
+    daysLeft,
+    plan: st.plan,
+    lapsedAt: st.lapsedAt,
+    dev: DEV_MODE || undefined,
+  };
+};
+app.get('/api/settings/licence', (_req, res) => {
+  void recheckLicence(); // cheap: only asks the shop when a check is due
+  res.json(publicLicence(licenceState()));
+});
 app.put('/api/settings/licence', async (req, res) => {
   const key = String(req.body?.key ?? '').trim().slice(0, 120);
   if (!key) {
-    saveLicence(null);
-    res.json(publicLicence({ key: '', status: 'none' }));
+    // Removing the key goes back to the trial clock; lapse history stays so it cannot be reset.
+    const old = licenceState();
+    saveLicence({ key: '', status: 'none', lapsedAt: old.lapsedAt, validAt: old.validAt });
+    res.json(publicLicence(licenceState()));
     return;
   }
   const st = await checkLicence(key);
   saveLicence(st);
   res.json(publicLicence(st));
 });
-// Daily re-check, quietly.
-const recheckLicence = async () => {
+// Re-check, quietly: once a day; every hour while the shop was unreachable or the key's date has
+// passed (a renewal moves it), so a paying buyer never waits a day to be seen again.
+let rechecking = false;
+const recheckLicence = async (force = false) => {
   const st = licenceState();
-  if (!st.key) return;
+  if (!st.key || rechecking) return;
   const age = st.checkedAt ? Date.now() - Date.parse(st.checkedAt) : Infinity;
-  if (age < 20 * 3600_000) return;
-  saveLicence(await checkLicence(st.key, st.activationId));
+  const pastDate = st.status === 'valid' && !!st.expiresAt && Date.parse(st.expiresAt) <= Date.now();
+  const due = force || age >= 20 * 3600_000 || ((st.unreachable || st.status === 'down' || pastDate) && age >= 3600_000);
+  if (!due) return;
+  rechecking = true;
+  try {
+    const next = await checkLicence(st.key, st.activationId);
+    // Down keeps the old checkedAt, so the hourly retry runs; a real answer stamps it.
+    saveLicence(next.unreachable || next.status === 'down' ? { ...next, checkedAt: st.checkedAt } : next);
+  } finally {
+    rechecking = false;
+  }
 };
-setTimeout(() => void recheckLicence(), 30_000);
-setInterval(() => void recheckLicence(), 6 * 3600_000).unref();
+// Every server start checks once (after 30 s, so the start stays quick), then the timer.
+setTimeout(() => void recheckLicence(true), 30_000);
+setInterval(() => void recheckLicence(), 3600_000).unref();
 
 // Installed version: .version (written by the installer from the zip) or git.
 const installedVersion = () => {
@@ -1560,6 +1676,11 @@ const installedVersion = () => {
 app.get('/api/settings/update', async (_req, res) => {
   const st = licenceState();
   const current = installedVersion();
+  const { access } = accessOf(st);
+  if (access === 'blocked' || access === 'trial_ended') {
+    res.json({ current, available: false, reason: 'licence', access });
+    return;
+  }
   if (!st.key || !st.activationId) {
     res.json({ current, available: false, reason: 'no_licence' });
     return;
@@ -1699,7 +1820,7 @@ const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried
 // chat, which knows the reel). With rerender, the video is made again ONCE after the Ask turn, and
 // only if the edit really changed. That render is checked again but never loops by itself.
 const fixLoops = new Set<string>();
-app.post('/api/projects/:slug/critic/fix', (req, res) => {
+app.post('/api/projects/:slug/critic/fix', needAccess, (req, res) => {
   const slug = req.params.slug;
   const fixes = (Array.isArray(req.body?.fixes) ? req.body.fixes : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 8) as string[];
   const rerender = req.body?.rerender === true;
@@ -1741,7 +1862,7 @@ app.post('/api/projects/:slug/critic/fix', (req, res) => {
   res.json({ ok: true, rerender });
 });
 
-app.post('/api/projects/:slug/ask', (req, res) => {
+app.post('/api/projects/:slug/ask', needAccess, (req, res) => {
   const slug = req.params.slug;
   const message = String(req.body?.message ?? '').trim().slice(0, 4000);
   if (!message) {
@@ -2035,7 +2156,7 @@ app.get('/api/story/voice/preview.wav', (_req, res) => {
 
 // Make a story project: fields title, script, language, voice ('own' | 'ai'), background; file "audio"
 // (her recording) when voice = 'own'.
-app.post('/api/projects/story', toTemp.single('audio'), (req, res) => {
+app.post('/api/projects/story', needAccess, toTemp.single('audio'), (req, res) => {
   const f = req.file;
   const drop = () => f && fs.rmSync(f.path, { force: true });
   const title = String(req.body?.title ?? '').trim().slice(0, 80) || 'Film z tekstu';
@@ -2091,7 +2212,7 @@ const planStory = (slug: string) => {
   startAsk(slug, `${text}\n\n(Use the /reel-story skill${product ? ', product video rules: screen, click, type, logos, price with the real board screenshots' : ''}. Do not render the video.)`, { resume: chat(slug).sessionId });
   return true;
 };
-app.post('/api/projects/:slug/story/plan', (req, res) => {
+app.post('/api/projects/:slug/story/plan', needAccess, (req, res) => {
   const slug = req.params.slug;
   if (!isStoryProject(slug)) {
     res.status(409).json({ code: 'not_story', error: 'This is not a video from text' });

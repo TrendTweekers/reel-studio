@@ -25,6 +25,7 @@ import { editReducer, initialEditState, merge3 } from './editState';
 import { errText, fmt, num, plural, useT } from './i18n';
 import { useBrand } from './brand';
 import { go, TopRight } from './App';
+import { LicenceBanner, useStopText } from './LicenceBanner';
 import { StepList } from './Home';
 import { Preview } from './Preview';
 import { WordsPanel } from './WordsPanel';
@@ -671,6 +672,7 @@ export function Editor({ slug }: { slug: string }) {
 
   const topJob = tkJob.render?.running && !render?.running ? tkJob : igJob;
   const rendering = !!igJob.render?.running || !!tkJob.render?.running;
+  const stopText = useStopText(); // subscription ended or trial over: no new videos
   const pct = Math.round((topJob.render?.progress ?? 0) * 100);
 
   const header = (
@@ -723,16 +725,17 @@ export function Editor({ slug }: { slug: string }) {
         ) : (
           edit && (
             <button
-              className={`btn top-make ${rendering ? 'running' : ''}`}
+              className={`btn top-make ${rendering ? 'running' : ''} ${stopText && !rendering ? 'stopped' : ''}`}
               onClick={() => (rendering ? document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth' }) : void startRender())}
               disabled={renderStarting}
+              title={stopText && !rendering ? stopText : undefined}
               style={rendering ? { ['--pct' as string]: `${pct}%` } : undefined}
             >
-              {rendering ? (pct === 0 ? t('makingShort') : `${t('makingShort')} ${pct}%`) : long ? t('topMakeYt') : t('topMakeIg')}
+              {rendering ? (pct === 0 ? t('makingShort') : `${t('makingShort')} ${pct}%`) : stopText ? t('licStopShort') : long ? t('topMakeYt') : t('topMakeIg')}
             </button>
           )
         )}
-        {edit && !rendering && !long && (
+        {edit && !rendering && !long && !stopText && (
           <button className="btn top-tiktok" onClick={() => void tkJob.start()} disabled={tkJob.starting} title={t('makeTiktok')}>
             {t('topTiktok')}
           </button>
@@ -763,6 +766,7 @@ export function Editor({ slug }: { slug: string }) {
     return (
       <div className="editor">
         {header}
+      <LicenceBanner />
         <div className="editor-empty">
           {status && status.step !== 'ready' ? (
             <div className="processing-card">
@@ -867,6 +871,7 @@ export function Editor({ slug }: { slug: string }) {
   return (
     <div className="editor">
       {header}
+      <LicenceBanner />
       {askRunning && <div className="claude-bar">{t('claudeEditing')}</div>}
       <div className={`editor-body ${askOpen ? 'ask-open' : ''} ${long && longSize(edit).wide ? 'wide-stage' : ''}`}>
         <aside className="stage-col">
@@ -1240,8 +1245,15 @@ function useRenderJob(
       else setStartErr(errText(t, (body?.code as string) ?? null, (body?.error as string) ?? (e as Error).message) || t('renderFailed'));
     }
   }, [slug, variant, t]);
+  const stopText = useStopText();
   const start = useCallback(async () => {
     if (starting || checking || render?.running) return;
+    // Stopped by the licence: say why here instead of starting (the server would refuse anyway).
+    if (stopText) {
+      setStartErr(stopText);
+      setTimeout(() => document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      return;
+    }
     setStarting(true);
     setStartErr(null);
     setJustDone(null);
@@ -1266,7 +1278,7 @@ function useRenderJob(
     } finally {
       setStarting(false);
     }
-  }, [starting, checking, render?.running, flush, slug, variant, doStart]);
+  }, [starting, checking, render?.running, flush, slug, variant, doStart, stopText]);
   const startAnyway = useCallback(async () => {
     setPf(null);
     setStarting(true);

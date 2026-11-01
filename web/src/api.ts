@@ -205,7 +205,21 @@ export type StoryMode = 'creator' | 'product';
 export type ProductInfo = { name: string; what: string; audience: string; screenshots: string[] };
 // null = the server could not tell.
 export type ClaudeState = { installed: boolean; version: string | null; loggedIn: boolean | null };
-export type LicenceState = { key: string | null; status: 'none' | 'saved' | 'valid' | 'invalid' | 'revoked' | 'limit' | 'down'; email?: string; checkedAt?: string; error?: string };
+// access: what she can do now (server decides). daysLeft = trial or grace days left. Older servers leave these out.
+export type LicenceState = {
+  key: string | null;
+  status: 'none' | 'saved' | 'valid' | 'invalid' | 'revoked' | 'expired' | 'limit' | 'down';
+  unreachable?: boolean;
+  email?: string;
+  checkedAt?: string;
+  error?: string;
+  access?: 'full' | 'grace' | 'blocked' | 'trial' | 'trial_ended';
+  expiresAt?: string | null;
+  daysLeft?: number;
+  plan?: string;
+  lapsedAt?: string;
+  dev?: boolean;
+};
 export type UpdateState = { current: string; latest?: string; date?: string; notes?: string; available: boolean; reason?: string };
 export type VoiceState = { ready: boolean; installing: boolean; progress: number; error?: string; sample: boolean; sizeGb: number };
 
