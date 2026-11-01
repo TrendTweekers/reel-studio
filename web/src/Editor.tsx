@@ -12,6 +12,8 @@ import {
   ServerDownError,
   type FileItem,
   type Problem,
+  type Preflight,
+  type PreflightItem,
   type ProjectDetail,
   type RenderState,
   type Variant,
@@ -567,8 +569,6 @@ export function Editor({ slug }: { slug: string }) {
         return;
       }
       if (s.url) setDoneFlash({ url: s.url, id: Date.now() });
-      // Claude checks the new video: open the Ask box so she sees it working.
-      if (s.check === 'started') setAskOpen(true);
       showToast(t(s.check === 'started' ? 'renderReadyCheckToast' : 'renderReadyToast'), s.url ? { long: true, href: s.url, link: `${t('download')} ↓` } : { long: true });
       setTimeout(() => document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     },
@@ -1081,9 +1081,9 @@ export function Editor({ slug }: { slug: string }) {
             onFix={fixProblem}
             lastChange={lastChange}
             onCheck={() => {
-              setAskOpen(true);
               void api.checkVideo(slug).catch(() => showToast(t('checkBusy')));
             }}
+            onAsk={() => setAskOpen(true)}
           />
           {!askOpen && <p className="tip">{t('tip')}</p>}
         </main>
@@ -1175,6 +1175,10 @@ export type RenderJob = {
   startErr: string | null;
   justDone: string | null;
   start: () => Promise<void>;
+  checking: boolean; // the look before the render is running ("Sprawdzam…")
+  pf: Preflight | null; // its result when it found something to show
+  startAnyway: () => Promise<void>; // soft warnings only: make it anyway
+  dismissPf: () => void;
 };
 
 // One render job (Instagram or TikTok): polls its state and starts it.
@@ -1222,23 +1226,58 @@ function useRenderJob(
     };
   }, [slug, variant, onFinished]);
 
-  const start = useCallback(async () => {
-    if (starting || render?.running) return;
-    setStarting(true);
-    setStartErr(null);
-    setJustDone(null);
+  const [checking, setChecking] = useState(false);
+  const [pf, setPf] = useState<Preflight | null>(null);
+  // POST render runs the look again (cached for 2 minutes), so a refusal can still come back here.
+  const doStart = useCallback(async () => {
     try {
-      await flush();
       await api.startRender(slug, variant);
       was.current = true;
       setRender({ running: true, progress: 0 });
     } catch (e) {
       const body = e instanceof HttpError ? e.body : null;
-      setStartErr(errText(t, (body?.code as string) ?? null, (body?.error as string) ?? (e as Error).message) || t('renderFailed'));
+      if (body?.code === 'preflight') setPf({ ok: false, hard: (body.problems as PreflightItem[]) ?? [], soft: (body.warnings as PreflightItem[]) ?? [], ms: 0 });
+      else setStartErr(errText(t, (body?.code as string) ?? null, (body?.error as string) ?? (e as Error).message) || t('renderFailed'));
+    }
+  }, [slug, variant, t]);
+  const start = useCallback(async () => {
+    if (starting || checking || render?.running) return;
+    setStarting(true);
+    setStartErr(null);
+    setJustDone(null);
+    setPf(null);
+    try {
+      await flush();
+      setChecking(true);
+      let p: Preflight | null = null;
+      try {
+        p = await api.preflight(slug, variant);
+      } catch {
+        p = null; // the look itself failed: the render request decides
+      } finally {
+        setChecking(false);
+      }
+      if (p && (p.hard.length || p.soft.length)) {
+        setPf(p);
+        setTimeout(() => document.getElementById('panel-render')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+        return;
+      }
+      await doStart();
     } finally {
       setStarting(false);
     }
-  }, [starting, render?.running, flush, slug, variant, t]);
+  }, [starting, checking, render?.running, flush, slug, variant, doStart]);
+  const startAnyway = useCallback(async () => {
+    setPf(null);
+    setStarting(true);
+    try {
+      await flush();
+      await doStart();
+    } finally {
+      setStarting(false);
+    }
+  }, [flush, doStart]);
+  const dismissPf = useCallback(() => setPf(null), []);
 
-  return { render, starting, startErr, justDone, start };
+  return { render, starting, startErr, justDone, start, checking, pf, startAnyway, dismissPf };
 }

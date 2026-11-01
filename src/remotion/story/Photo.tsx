@@ -6,6 +6,7 @@ import { useCurrentFrame } from 'remotion';
 import { useReel } from '../context';
 import { BoardImage } from '../effects/Picture';
 import { BOX, BOX_H, breath, draw, fitText, ITALIC_W, mix, reveal, serif, useScene } from './kit';
+import { HalftoneCopy, photoFilter, PhotoGrade } from './look';
 
 export const Photo: React.FC = () => {
   const frame = useCurrentFrame();
@@ -24,6 +25,12 @@ export const Photo: React.FC = () => {
   const c = reveal(frame, 18, first, 20);
   const missing = failed || !scene.image;
   const PAD = 22; // passe-partout gap between picture and hairline
+  const src = props.urls.board + encodeURIComponent(scene.image ?? '');
+  // Film pictures get a slower, wider Ken Burns (zoom in and a sideways pan); the rest settle out.
+  const move: React.CSSProperties =
+    theme.photo === 'film'
+      ? { width: '100%', height: '100%', transform: `scale(${1.04 + 0.12 * b}) translate(${(b - 0.5) * -3}%, ${(0.5 - b) * 1.5}%)` }
+      : { width: '100%', height: '100%', transform: `scale(${1.12 - 0.1 * b - (1 - open) * 0.04}) translateY(${(0.5 - b) * 14}px)` };
   const perim = 2 * (w + h + 4 * PAD);
 
   const fallback = (
@@ -50,11 +57,11 @@ export const Photo: React.FC = () => {
           {missing ? (
             fallback
           ) : (
-            <BoardImage
-              src={props.urls.board + encodeURIComponent(scene.image!)}
-              onFail={() => setFailed(true)}
-              style={{ width: '100%', height: '100%', transform: `scale(${1.12 - 0.1 * b - (1 - open) * 0.04}) translateY(${(0.5 - b) * 14}px)` }}
-            />
+            <>
+              <BoardImage src={src} onFail={() => setFailed(true)} style={{ ...move, filter: photoFilter(theme, frame) }} />
+              {theme.photo === 'halftone' ? <HalftoneCopy src={src} style={move} /> : null}
+              <PhotoGrade theme={theme} />
+            </>
           )}
         </div>
       </div>

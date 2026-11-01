@@ -2,7 +2,7 @@
 // Story layout: content lives in the upper two thirds (BOX), so the subtitles below never touch it.
 import { createContext, useContext, type CSSProperties } from 'react';
 import { Easing, interpolate, spring } from 'remotion';
-import { FPS, WIDTH } from '../../shared/types';
+import { FPS, HEIGHT, WIDTH, type StoryBackground } from '../../shared/types';
 import type { TimedScene } from '../../shared/story';
 import { CREAM, INK, isDark, luminance, withAlpha } from '../color';
 import { breakLines, SAFE } from '../model';
@@ -15,6 +15,8 @@ export const BOX = { x: 96, y: SAFE.top + 90, w: WIDTH - 192, bottom: 1250 } as 
 export const BOX_H = BOX.bottom - BOX.y;
 export const BOX_CY = BOX.y + BOX_H / 2;
 
+// look = which texture world the Shell draws. Plain papers are 'plain'.
+export type Look = 'plain' | 'gazeta' | 'riso' | 'noir';
 export type Theme = {
   bg: string;
   text: string;
@@ -22,6 +24,13 @@ export type Theme = {
   faint: string; // hairlines, numbers in the background
   line: string; // the accent line colour, readable on bg
   dark: boolean;
+  look: Look;
+  misreg: string | null; // the second print colour, drawn as a small offset copy of the scene (print look)
+  misregPx: number; // how far the second colour slips
+  glow: string | null; // a soft edge light around type and lines (film)
+  letterbox: number; // top and bottom bars, px each (0 = none); scenes stay between them
+  photo: 'none' | 'halftone' | 'duotone' | 'film'; // how board pictures are treated
+  ink2: string; // the second ink (duotone mid tone); for plain papers the accent line
 };
 
 const hex = (c: string) => {
@@ -37,19 +46,65 @@ export const mix = (a: string, b: string, k: number) => {
   const c = p.map((v, i) => Math.round(v + (q[i] - v) * k));
   return `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 };
+export const rgb01 = (c: string) => (hex(c) ?? [0, 0, 0]).map((v) => v / 255);
 const contrast = (a: string, b: string) => {
   const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
   return (x + 0.05) / (y + 0.05);
 };
+// Push a colour towards `to` until it reads as a line on `bg`.
+const readable = (c: string, bg: string, to: string, min = 2.2) => {
+  let line = c;
+  for (let k = 0.2; contrast(line, bg) < min && k <= 1; k += 0.2) line = mix(c, to, k);
+  return line;
+};
+// Saturation 0..1 (HSL-ish), so a grey or pastel accent can be swapped for a real print ink.
+const chroma = (c: string) => {
+  const p = rgb01(c);
+  return Math.max(...p) - Math.min(...p);
+};
 
-export const themeFor = (background: 'cream' | 'ink' | 'accent' | undefined, accent: string): Theme => {
+const plain = (bg: string, text: string, line: string, extra: Partial<Theme> = {}): Theme => ({
+  bg,
+  text,
+  soft: withAlpha(text, 0.62),
+  faint: withAlpha(text, 0.16),
+  line,
+  dark: isDark(bg),
+  look: 'plain',
+  misreg: null,
+  misregPx: 0,
+  glow: null,
+  letterbox: 0,
+  photo: 'none',
+  ink2: line,
+  ...extra,
+});
+
+// Newsprint and riso papers and inks. Fixed, so every video in a look prints the same.
+export const GAZETA = { paper: '#ECE8DD', ink: '#1C1B19', cyan: '#2F86B5' } as const;
+export const RISO = { paper: '#F2EDE3', ink: '#1E2547', red: '#E8532F' } as const;
+export const NOIR = { bg: '#0D0B0A', text: '#F2E8D5', gold: '#D2A85E' } as const;
+export const LETTERBOX = Math.round(HEIGHT * 0.07);
+
+export const themeFor = (background: StoryBackground | undefined, accent: string): Theme => {
+  if (background === 'gazeta') {
+    // Accent lines in her colour (made readable), slipped against a process-cyan second plate.
+    const line = readable(accent, GAZETA.paper, GAZETA.ink, 3.6);
+    return plain(GAZETA.paper, GAZETA.ink, line, { look: 'gazeta', misreg: withAlpha(GAZETA.cyan, 0.5), misregPx: 2, photo: 'halftone', soft: withAlpha(GAZETA.ink, 0.68) });
+  }
+  if (background === 'riso') {
+    // Two drums: blue-black and a warm second ink. Her accent only if it prints as a strong colour.
+    const red = chroma(accent) > 0.45 && contrast(accent, RISO.paper) > 2.4 ? accent : RISO.red;
+    return plain(RISO.paper, RISO.ink, red, { look: 'riso', misreg: withAlpha(red, 0.7), misregPx: 3, photo: 'duotone', ink2: red, soft: withAlpha(RISO.ink, 0.7), faint: withAlpha(RISO.ink, 0.18) });
+  }
+  if (background === 'noir') {
+    const gold = contrast(accent, NOIR.bg) > 5 && chroma(accent) > 0.12 ? accent : NOIR.gold;
+    return plain(NOIR.bg, NOIR.text, gold, { look: 'noir', glow: withAlpha(NOIR.gold, 0.32), letterbox: LETTERBOX, photo: 'film', soft: withAlpha(NOIR.text, 0.66), faint: withAlpha(NOIR.text, 0.14) });
+  }
   const bg = background === 'ink' ? '#161412' : background === 'accent' ? accent : CREAM;
-  const dark = isDark(bg);
-  const text = dark ? CREAM : INK;
+  const text = isDark(bg) ? CREAM : INK;
   // The accent must read as a line on the paper; a pale gold on cream is pushed towards ink.
-  let line = background === 'accent' ? text : accent;
-  for (let k = 0.2; contrast(line, bg) < 2.2 && k <= 1; k += 0.2) line = mix(accent, text, k);
-  return { bg, text, soft: withAlpha(text, 0.62), faint: withAlpha(text, 0.16), line, dark };
+  return plain(bg, text, readable(background === 'accent' ? text : accent, bg, text));
 };
 
 // ---------- text fitting ----------

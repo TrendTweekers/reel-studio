@@ -215,10 +215,14 @@ export type StoryScene = {
   point?: { x: number; y: number }; // click: where on the picture, 0..1 from the top-left corner
 };
 export const STORY_PRODUCT_KINDS: StorySceneKind[] = ['screen', 'click', 'type', 'logos', 'price'];
+// The scenes' colour world. cream / ink / accent are plain papers (accent = style.accentColor);
+// gazeta (newsprint), riso (two-colour print) and noir (film) are full looks with their own texture.
+export const STORY_BACKGROUNDS = ['cream', 'ink', 'accent', 'gazeta', 'riso', 'noir'] as const;
+export type StoryBackground = (typeof STORY_BACKGROUNDS)[number];
 export type StorySettings = {
   script: string; // the text that is read
   voice: 'own' | 'ai'; // her recording, or the computer voice
-  background: 'cream' | 'ink' | 'accent'; // the scenes' colour world (accent = style.accentColor)
+  background: StoryBackground;
   scenes: StoryScene[];
 };
 // Who uses this copy of Klipownia (settings.json "brand"). Set once on the first start; Claude reads

@@ -1,6 +1,6 @@
 // Render a story video (edit.format 'story') on a real project's words and voice, to look at it.
 // Needs Klipownia running (media comes from :8787).
-//   npx tsx scripts/story-still.ts <slug> <patch.json> [--at 1.5,4,9] [--scenes] [--bg cream|ink|accent]
+//   npx tsx scripts/story-still.ts <slug> <patch.json> [--at 1.5,4,9] [--scenes] [--bg cream|ink|accent|gazeta|riso|noir]
 //                                  [--out dir] [--video 3,12] [--keep]
 // patch.json = an Edit patch merged over the project's edit.json (format 'story' + story settings).
 // --at = OUTPUT seconds. --scenes = two stills per scene (just after it settles, and near its end).
@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
-import { FPS, type Edit, type ReelProps } from '../src/shared/types';
+import { FPS, type Edit, type ReelProps, type StoryBackground } from '../src/shared/types';
 import { timedScenes } from '../src/shared/story';
 import { herReels } from '../server/reels';
 
@@ -33,7 +33,7 @@ if (!rest.includes('--keep')) {
   edit.hook = patch.hook ?? null;
 }
 const bg = opt('--bg');
-if (bg && edit.story) edit.story = { ...edit.story, background: bg as 'cream' | 'ink' | 'accent' };
+if (bg && edit.story) edit.story = { ...edit.story, background: bg as StoryBackground };
 if (!edit.story) throw new Error('the patch needs "story": { script, voice, background, scenes }');
 
 const out = path.resolve(opt('--out') ?? path.join(ROOT, 'fx-test', 'story'));

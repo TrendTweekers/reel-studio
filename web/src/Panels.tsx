@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Edit } from '../../src/shared/types';
 import { HOOK_FONTS, SFX_NAMES, SUBTITLE_FONTS } from '../../src/shared/types';
-import { api, upload, type FileItem, type Problem, type RenderInfo, type SfxItem } from './api';
+import { api, upload, type FileItem, type PreflightItem, type Problem, type RenderInfo, type RenderState, type SfxItem } from './api';
 import type { Change, RenderJob, UsedBy } from './Editor';
-import { errText, fmt, FONT_CAPTIONS, num, numFixed, sfxLabel, useT, type StrKey } from './i18n';
+import { errText, fmt, FONT_CAPTIONS, num, numFixed, pfText, sfxLabel, useT, type StrKey } from './i18n';
 import { Check, Chips, Group, HelpTip, Panel, playPreview } from './ui';
 
 type P = { edit: Edit; change: Change };
@@ -452,8 +452,8 @@ function JobBlock({ slug, job, label, primary }: { slug: string; job: RenderJob;
   return (
     <div className="job">
       {!running ? (
-        <button className={`btn ${primary ? 'primary' : 'secondary'} huge`} onClick={() => void job.start()} disabled={job.starting}>
-          {job.starting ? t('making') : label}
+        <button className={`btn ${primary ? 'primary' : 'secondary'} huge`} onClick={() => void job.start()} disabled={job.starting || job.checking}>
+          {job.checking ? t('pfChecking') : job.starting ? t('making') : label}
         </button>
       ) : (
         <div className="render-progress">
@@ -464,6 +464,23 @@ function JobBlock({ slug, job, label, primary }: { slug: string; job: RenderJob;
           <div className="mono">{pct}%</div>
         </div>
       )}
+      {job.pf && !running && (
+        <div className="check-box warn preflight">
+          {job.pf.hard.length > 0 && <PfList title={t('pfHardTitle')} items={job.pf.hard} />}
+          {job.pf.soft.length > 0 && <PfList title={t('pfSoftTitle')} items={job.pf.soft} />}
+          <div className="row gap">
+            {job.pf.hard.length === 0 && (
+              <button className="btn primary" onClick={() => void job.startAnyway()}>
+                {t('pfRenderAnyway')}
+              </button>
+            )}
+            <button className="btn" onClick={job.dismissPf}>
+              {t('pfCancel')}
+            </button>
+          </div>
+        </div>
+      )}
+      {running && !!r?.warnings?.length && <PfList title={t('pfWarnTitle')} items={r.warnings} muted />}
       {(job.startErr || err) && <p className="error-text">{job.startErr ?? err}</p>}
       {!running && !job.starting && !job.startErr && !err && !job.justDone && r?.stopped && <p className="error-text render-stopped">{t('renderStopped')}</p>}
       {!running && job.justDone && (
@@ -486,6 +503,80 @@ function JobBlock({ slug, job, label, primary }: { slug: string; job: RenderJob;
   );
 }
 
+function PfList({ title, items, muted }: { title: string; items: PreflightItem[]; muted?: boolean }) {
+  const { t } = useT();
+  return (
+    <div className={muted ? 'pf-list muted small' : 'pf-list'}>
+      <div className="group-label">{title}</div>
+      <ul>
+        {items.map((i, k) => (
+          <li key={k}>{pfText(t, i)}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// The fresh critic's grade of the newest video: score, ship/fix, issues. "Napraw to" sends one fix
+// to the Ask chat (the Claude that edits the reel); "Popraw i zrenderuj" sends all and makes it again once.
+function VerdictCard({ slug, r, onAsk }: { slug: string; r: RenderState | null; onAsk: () => void }) {
+  const { t } = useT();
+  const [msg, setMsg] = useState<string | null>(null);
+  if (!r || r.running) return null;
+  if (r.checking)
+    return (
+      <div className="verdict checking">
+        <span className="toast-dot" /> {t('vdChecking')}
+      </div>
+    );
+  const v = r.verdict;
+  if (!v) return null;
+  const send = async (fixes: string[], rerender: boolean) => {
+    setMsg(null);
+    try {
+      await api.criticFix(slug, fixes, rerender);
+      setMsg(rerender ? t('vdFixing') : t('vdSent'));
+      onAsk();
+    } catch {
+      setMsg(t('checkBusy'));
+    }
+  };
+  return (
+    <div className={`verdict ${v.verdict}`}>
+      <div className="verdict-head">
+        <span className="group-label">{t('vdTitle')}</span>
+        <span className="verdict-score">{v.score}/10</span>
+        <span className={`verdict-tag ${v.verdict}`}>{v.verdict === 'ship' ? t('vdShip') : t('vdFix')}</span>
+      </div>
+      {v.summary && <p className="small">{v.summary}</p>}
+      {r.latest && v.file !== r.latest && <p className="muted small">{t('vdOlder')}</p>}
+      {v.issues.length > 0 && (
+        <ul>
+          {v.issues.map((i, k) => (
+            <li key={k}>
+              <span>
+                <span className="mono">{i.time}</span> {i.problem}
+                {i.fix && <span className="muted small"> {i.fix}</span>}
+              </span>
+              {i.fix && (
+                <button className="link-btn" disabled={r.fixing} onClick={() => void send([i.fix], false)}>
+                  {t('vdFixOne')} →
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {v.issues.some((i) => i.fix) && (
+        <button className="btn" disabled={r.fixing} onClick={() => void send(v.issues.map((i) => i.fix).filter(Boolean), true)}>
+          ✦ {t('vdFixAll')}
+        </button>
+      )}
+      {(r.fixing || msg) && <p className="muted small">{r.fixing ? t('vdFixing') : msg}</p>}
+    </div>
+  );
+}
+
 export function RenderPanel({
   slug,
   jobs,
@@ -494,6 +585,7 @@ export function RenderPanel({
   onFix,
   lastChange,
   onCheck,
+  onAsk,
   long,
 }: {
   long?: boolean; // a long YouTube video: one job, no TikTok version
@@ -504,6 +596,7 @@ export function RenderPanel({
   onFix: (effectId?: string) => void;
   lastChange: number;
   onCheck: () => void;
+  onAsk: () => void;
 }) {
   const { t, lang } = useT();
   const [autoCheck, setAutoCheck] = useState<boolean | null>(null);
@@ -545,6 +638,7 @@ export function RenderPanel({
         <JobBlock slug={slug} job={jobs.instagram} label={long ? t('makeYoutube') : t('makeInstagram')} primary />
         {!long && <JobBlock slug={slug} job={jobs.tiktok} label={t('makeTiktok')} primary={false} />}
       </div>
+      {!long && <VerdictCard slug={slug} r={jobs.instagram.render} onAsk={onAsk} />}
       <div className="video-check">
         {autoCheck !== null && (
           <Check
@@ -556,7 +650,7 @@ export function RenderPanel({
             }}
           />
         )}
-        {hasIgVideo && !jobs.instagram.render?.running && (
+        {hasIgVideo && !jobs.instagram.render?.running && !jobs.instagram.render?.checking && (
           <button className="btn" onClick={onCheck}>
             ✦ {t('checkVideo')}
           </button>

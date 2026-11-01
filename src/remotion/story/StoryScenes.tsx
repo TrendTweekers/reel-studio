@@ -16,7 +16,7 @@ import { Price } from './Price';
 import { Quote } from './Quote';
 import { Reels } from './Reels';
 import { Click, Screen } from './Screen';
-import { Background, OUT, SceneShell } from './Shell';
+import { Background, LookTop, OUT, SceneShell } from './Shell';
 import { Title } from './Title';
 import { Type } from './Type';
 import { Words } from './Words';
@@ -74,6 +74,7 @@ export const StoryScenes: React.FC = () => {
           </Sequence>
         );
       })}
+      <LookTop theme={theme} />
     </AbsoluteFill>
   );
 };

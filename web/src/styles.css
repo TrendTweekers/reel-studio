@@ -2464,6 +2464,84 @@ button.board-item:hover,
   margin: 0;
   color: var(--ok);
 }
+.check-box.preflight {
+  margin-top: 12px;
+}
+.check-box.preflight .row {
+  margin-top: 10px;
+}
+.pf-list ul {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+.pf-list li {
+  font-size: 14px;
+  padding: 2px 0;
+}
+.pf-list.muted {
+  margin-top: 10px;
+}
+/* The critic's grade under the render buttons. */
+.verdict {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fffdfa;
+}
+.verdict.fix {
+  border-color: #e3c1a6;
+  background: #fbf2e8;
+}
+.verdict.checking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.verdict-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.verdict-score {
+  font-family: var(--serif, serif);
+  font-size: 22px;
+}
+.verdict-tag {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #e8efe4;
+  color: var(--ok);
+}
+.verdict-tag.fix {
+  background: #f3dcc8;
+  color: #9a4f1c;
+}
+.verdict p {
+  margin: 6px 0;
+}
+.verdict ul {
+  margin: 6px 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.verdict li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 14px;
+  border-top: 1px solid var(--line);
+}
+.verdict .link-btn {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
 .render-done {
   margin-top: 18px;
   padding: 16px 18px;

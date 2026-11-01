@@ -26,6 +26,7 @@ import {
   HOOK_FONTS,
   NEEDS_CUTOUT,
   SFX_NAMES,
+  STORY_BACKGROUNDS,
   SUBTITLE_FONTS,
   type CoverCandidate,
   type Edit,
@@ -68,14 +69,14 @@ class UserError extends Error {}
 
 // ---------- API ----------
 type ApiError = Error & { status?: number; body?: Record<string, unknown> | null };
-async function api<T = unknown>(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+async function api<T = unknown>(method: string, url: string, body?: unknown, headers: Record<string, string> = {}, timeoutMs = 30000): Promise<T> {
   let res: Response;
   try {
     res = await fetch(ORIGIN + url, {
       method,
       headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new NotOpen(NOT_OPEN);
@@ -878,7 +879,7 @@ tool(
     title: z.string().min(1).max(80),
     script: z.string().min(20).max(6000),
     language: z.enum(['pl', 'en']).default('pl'),
-    background: z.enum(['cream', 'ink', 'accent']).default('cream'),
+    background: z.enum(STORY_BACKGROUNDS).default('cream').describe('cream/ink/accent = plain paper; gazeta = newsprint, riso = two-colour print, noir = dark film'),
   },
   WRITE,
   async ({ title, script, language, background }) => {
@@ -900,7 +901,7 @@ tool(
 tool(
   'set_story_scenes',
   'Video from text only: replace all scenes (and optionally the background). Product videos (meta mode product) use screen/click/type/logos/price with real board screenshots. Follow the reel-story rules: one scene per idea every 2 to 5 s, at = source seconds of the first spoken word of the idea (get_words), the first at the first word; words = 2 or 3 short lines joined with \n (key words, not the sentence); list items max 5 words; number items[0] = the number; compare ONLY for wrong vs right, items = [no side, yes side] (two equal options are words or list, not compare); photo only with a real board picture; vary the kinds.',
-  { slug: slugArg, scenes: z.array(sceneShape).min(1).max(40), background: z.enum(['cream', 'ink', 'accent']).optional() },
+  { slug: slugArg, scenes: z.array(sceneShape).min(1).max(40), background: z.enum(STORY_BACKGROUNDS).optional() },
   WRITE,
   async ({ slug, scenes, background }) => {
     const p = await getProject(slug);
@@ -1084,13 +1085,29 @@ tool(
     const ps = await problems(slug);
     if (ps.length) return `Not started. Fix these first:\n${problemText(ps)}`;
     const before = await api<RenderState>('GET', `/api/projects/${enc(slug)}/render`);
-    if (!before.running) await api('POST', `/api/projects/${enc(slug)}/render`, { ...(variant && variant !== 'instagram' ? { variant } : {}), check: false });
+    // The server looks at the reel first (files, text that cannot fit, 3 test frames, sound) and
+    // refuses with 409 code "preflight" and the list; soft warnings come back with the start.
+    let warnings: { text: string }[] = [];
+    if (!before.running) {
+      await progress(extra, 0, 'Checking the reel before making the video');
+      try {
+        const started = await api<{ warnings?: { text: string }[] }>('POST', `/api/projects/${enc(slug)}/render`, { ...(variant && variant !== 'instagram' ? { variant } : {}), check: false }, {}, 150000);
+        warnings = started.warnings ?? [];
+      } catch (e) {
+        const b = (e as ApiError).body as { code?: string; problems?: { text: string }[]; warnings?: { text: string }[] } | null;
+        if ((e as ApiError).status !== 409 || b?.code !== 'preflight') throw e;
+        const soft = b.warnings?.length ? `\nAlso worth a look:\n${b.warnings.map((w) => `- ${w.text}`).join('\n')}` : '';
+        return `Not started. The check before making the video found problems. Fix these first, then call make_video again:\n${(b.problems ?? []).map((p) => `- ${p.text}`).join('\n')}${soft}`;
+      }
+    }
     await sleep(1500);
+    const note = warnings.length ? `\n\nNoted before making (the video was still made):\n${warnings.map((w) => `- ${w.text}`).join('\n')}` : '';
     const r = await waitRender(slug, extra, 10 * 60 * 1000);
-    if (r.running) return `Still making the video (${Math.round(r.progress * 100)}%). Call video_status in a minute.`;
+    if (r.running) return `Still making the video (${Math.round(r.progress * 100)}%). Call video_status in a minute.${note}`;
     if (r.error) return `The video could not be made: ${r.error}. Fix the cause (often a missing picture or music) and try again.`;
     if (!r.file) return 'The video did not start. Try again.';
-    return renderDone(slug, r);
+    const done = await renderDone(slug, r);
+    return typeof done === 'string' ? done + note : done;
   },
 );
 tool('video_status', 'How far the video of a reel is (after make_video), and where the file is when ready.', { slug: slugArg }, READ, async ({ slug }) => {

@@ -9,6 +9,7 @@ import { ReelChoice } from './EffectsPanel';
 import { shortId } from './editState';
 import { numFixed, useT, type StrKey } from './i18n';
 import { PictureGrid } from './PictureGrid';
+import { storySwatches } from './storyLooks';
 import { Chips, fmtTime, Panel } from './ui';
 
 // The scenes of a story video (edit.format 'story'): what is drawn while the voice reads.
@@ -100,11 +101,7 @@ export function StoryPanel({
     setSelected(sc.id);
   };
 
-  const swatches: { v: StorySettings['background']; color: string; label: StrKey }[] = [
-    { v: 'cream', color: '#f6f1ea', label: 'bgCream' },
-    { v: 'ink', color: '#1b1715', label: 'bgInk' },
-    { v: 'accent', color: edit.style.accentColor, label: 'bgAccent' },
-  ];
+  const swatches = storySwatches(edit.style.accentColor);
 
   return (
     <Panel

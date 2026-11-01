@@ -7,6 +7,7 @@ import { Easing, Img, interpolate, useCurrentFrame } from 'remotion';
 import { useReel } from '../context';
 import { Cursor, pressAt } from '../effects/cursor';
 import { BOX, BOX_H, breath, CLAMP, ease, fitText, ITALIC_W, reveal, serif, useScene } from './kit';
+import { photoFilter, PhotoGrade } from './look';
 import { cover, deviceLayout, DeviceFrame, EmptyScreen, useImageAspect, type FrameKind } from './Device';
 
 const Product: React.FC<{ click: boolean }> = ({ click }) => {
@@ -66,7 +67,8 @@ const Product: React.FC<{ click: boolean }> = ({ click }) => {
             <EmptyScreen theme={theme} />
           ) : (
             <div style={{ position: 'relative', width: '100%', height: '100%', transformOrigin: origin, transform: `scale(${zoom})` }}>
-              <Img src={src!} style={{ position: 'absolute', left: -c.x, top: -c.y, width: c.w, height: c.h, display: 'block' }} />
+              <Img src={src!} style={{ position: 'absolute', left: -c.x, top: -c.y, width: c.w, height: c.h, display: 'block', filter: photoFilter(theme, frame, true) }} />
+              <PhotoGrade theme={theme} soft />
             </div>
           )}
         </DeviceFrame>

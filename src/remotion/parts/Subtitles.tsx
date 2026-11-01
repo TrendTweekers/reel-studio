@@ -67,13 +67,16 @@ export const Subtitles: React.FC = () => {
       // All words readable; the active one pops around its own centre and keeps its gaps.
       const pop = current ? spring({ frame: at - w.from, fps: FPS, config: { damping: 10, stiffness: 230, mass: 0.5 } }) : 0;
       const scale = current ? interpolate(pop, [0, 1], [0.86, 1.12]) : 1;
+      // The scale does not change the layout, so a long word would grow over its neighbours.
+      // Give it room: half of its own visual growth on each side (width ~ 0.55 em per letter).
+      const grow = Math.max(0, scale - 1) * 0.5 * (w.text.length * 0.55);
       s = {
         ...base,
         color: current ? accentOnVideo : plain,
         opacity: spoken || current ? 1 : 0.9,
         transform: `scale(${scale})`,
         transformOrigin: '50% 55%',
-        margin: `0 ${0.13 + Math.max(0, scale - 1) * 0.9}em`,
+        margin: `0 ${0.13 + grow}em`,
       };
     }
     return (

@@ -46,7 +46,14 @@ bottom. Read `StoryScene` / `StorySceneKind` in `src/shared/types.ts` for every 
 - Elegant and calm. Short words on screen, big type. The last scene is the call to action
   (`title` or `words`, e.g. "Zapisz na później").
 - `edit.story.background`: `cream` (default, light), `ink` (black, dramatic), `accent` (her accent
-  colour). Change it only when she asks.
+  colour). Change it only when she asks. Three full looks with their own texture, page number and
+  picture treatment (one look for the whole video):
+  - `gazeta`: newsprint. Grey paper, dot screen, double rules, black-and-white halftone photos. For
+    calm facts, news, explainers, "what changed" videos.
+  - `riso`: two-colour risograph print. Blue-black and a warm orange-red (or her accent when it is a
+    strong colour), slipped plates, duotone photos, big numerals. For playful tips, lists, recipes.
+  - `noir`: film. Near black, cream type with a gold glow, letterbox bars, film grain, Ken Burns
+    photos, dips to black between scenes. For stories, moods, personal and dramatic videos.
 - Normal effects still work on top (label, picture, checklist, chart, emoji, glass, chapter). Effects
   that need her on camera are ignored (see `STORY_SKIP_KINDS`).
 

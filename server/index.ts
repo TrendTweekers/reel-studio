@@ -10,11 +10,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrandSettings, CoverCandidate, CoverProps, Edit, ErrorCode, FaceSample, ProjectMeta, ProjectStatus, ProjectStep, ReelProps, RenderVariant, Word } from '../src/shared/types';
 import { faceAt } from '../src/shared/time';
-import { SFX_NAMES } from '../src/shared/types';
+import { SFX_NAMES, STORY_BACKGROUNDS } from '../src/shared/types';
 import { checkEdit } from '../src/shared/check';
 import { cutPauses, firstEdit, isFiller, summarizeFirstEdit } from './autoedit';
 import { measureLight } from './light';
 import { checkPrompt, checkVideo } from './videocheck';
+import { runCritic, saveVerdict, verdictChat, verdictFile, type Verdict } from './critic';
+import { preflight, preflightText, type Preflight, type PreflightItem } from './preflight';
 import { BUILT_IN_STYLES, applyStyle, type EditingStyle } from '../src/shared/styles';
 import { JobQueue, children, killAll, track } from './jobs';
 import { PLAIN, mapError } from './errors';
@@ -353,7 +355,7 @@ const makeCutout = (slug: string) => toolJob(slug, 'cutout', 'cutout', 'Cut-out 
 const findCovers = (slug: string) => toolJob(slug, 'covers', 'cover_frames', 'Cover frames failed');
 
 // ---- Render ----
-type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean; check?: 'started' | 'skipped'; noCheck?: boolean };
+type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean; check?: 'started' | 'skipped'; noCheck?: boolean; warnings?: PreflightItem[]; fromFix?: boolean };
 const renders = new Map<string, RenderJob>();
 const cancels = new Set<() => void>();
 
@@ -549,7 +551,7 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
     job.progress = 1;
     job.stage = 'Done';
     // Claude checks the finished video before she posts it (Instagram version; she can turn it off).
-    if (variant === 'instagram' && !job.noCheck && settings().autoCheck !== false && !asks.has(slug)) {
+    if (variant === 'instagram' && !job.noCheck && settings().autoCheck !== false && !critics.has(slug)) {
       job.check = 'started';
       void startVideoCheck(slug, final, inputProps);
     }
@@ -1143,20 +1145,42 @@ app.post('/api/projects/:slug/thumbnail/render', async (req, res) => {
   res.json({ ok: true, position: heavyQ.position(slug, 'thumbnail') || undefined });
 });
 
-app.post('/api/projects/:slug/render', (req, res) => {
-  const slug = req.params.slug;
-  const variant = variantOf(req.body?.variant);
+// The look before a render (server/preflight.ts). The result is kept for 2 minutes per edit version,
+// so the page's "Sprawdzam…" step and the render request right after it do not measure twice.
+const preflights = new Map<string, { key: string; at: number; result: Preflight }>();
+const preflightKey = (slug: string, variant: RenderVariant) =>
+  [mtime(file(slug, 'edit.json')), mtime(file(slug, 'proxy.mp4')), mtime(file(slug, 'cutout.webm')), mtime(BOARD), mtime(MUSIC), bundleKey].join('|') + variant;
+const runPreflight = async (slug: string, variant: RenderVariant, fresh = false): Promise<Preflight> => {
+  const k = `${slug}|${variant}`;
+  const key = preflightKey(slug, variant);
+  const c = preflights.get(k);
+  if (!fresh && c && c.key === key && Date.now() - c.at < 120_000) return c.result;
+  const result = await preflight({ dir: dir(slug), props: variantProps(slug, variant), board: BOARD, music: MUSIC, sfx: SFX, serveUrl: getBundle });
+  preflights.set(k, { key: preflightKey(slug, variant), at: Date.now(), result });
+  toolLog(slug, `\n== preflight ${variant}: ${result.hard.length} hard, ${result.soft.length} soft, ${result.ms} ms\n`);
+  return result;
+};
+
+type QueueResult = { ok: true; position?: number; warnings: PreflightItem[] } | { ok: false; status: number; body: Record<string, unknown> };
+const queueRender = async (slug: string, variant: RenderVariant, opts: { noCheck?: boolean; fromFix?: boolean } = {}): Promise<QueueResult> => {
   const key = renderKey(slug, variant);
-  if (renders.get(key)?.running) {
-    res.status(409).json({ code: 'busy', error: 'Already making this video' });
-    return;
+  if (renders.get(key)?.running || preflighting.has(key)) return { ok: false, status: 409, body: { code: 'busy', error: 'Already making this video' } };
+  if (analyseQ.has(slug) || !fs.existsSync(file(slug, 'edit.json'))) return { ok: false, status: 409, body: BUSY };
+  preflighting.add(key);
+  let pf: Preflight;
+  try {
+    pf = await runPreflight(slug, variant);
+  } catch (e) {
+    // The look itself broke (not her edit): do not block the video on our own bug.
+    toolLog(slug, `\n== preflight failed: ${(e as Error).message}\n`);
+    pf = { ok: true, hard: [], soft: [], ms: 0 };
+  } finally {
+    preflighting.delete(key);
   }
-  if (analyseQ.has(slug) || !fs.existsSync(file(slug, 'edit.json'))) {
-    res.status(409).json(BUSY);
-    return;
-  }
+  if (!pf.ok) return { ok: false, status: 409, body: { code: 'preflight', error: preflightText(pf), problems: pf.hard, warnings: pf.soft, ms: pf.ms } };
+  if (renders.get(key)?.running) return { ok: false, status: 409, body: { code: 'busy', error: 'Already making this video' } };
   // check:false = the caller checks the video itself (the Claude Desktop connector does).
-  const job: RenderJob = { running: true, progress: 0, stage: 'Waiting', queued: true, noCheck: req.body?.check === false };
+  const job: RenderJob = { running: true, progress: 0, stage: 'Waiting', queued: true, noCheck: opts.noCheck, warnings: pf.soft, fromFix: opts.fromFix };
   renders.set(key, job);
   saveRenderState(slug, variant, job);
   heavyQ.push({
@@ -1167,7 +1191,33 @@ app.post('/api/projects/:slug/render', (req, res) => {
     },
     run: () => doRender(slug, job, variant),
   });
-  res.json({ ok: true, variant, position: job.position });
+  return { ok: true, position: job.position, warnings: pf.soft };
+};
+const preflighting = new Set<string>();
+
+// Only the look, no render: the page shows "Sprawdzam…", then the list or starts the render.
+app.post('/api/projects/:slug/preflight', async (req, res) => {
+  const slug = req.params.slug;
+  if (!fs.existsSync(file(slug, 'edit.json'))) {
+    res.status(409).json(BUSY);
+    return;
+  }
+  try {
+    res.json(await runPreflight(slug, variantOf(req.body?.variant), req.body?.fresh === true));
+  } catch (e) {
+    res.status(500).json({ code: 'unknown', error: (e as Error).message });
+  }
+});
+
+app.post('/api/projects/:slug/render', async (req, res) => {
+  const slug = req.params.slug;
+  const variant = variantOf(req.body?.variant);
+  const r = await queueRender(slug, variant, { noCheck: req.body?.check === false });
+  if (!r.ok) {
+    res.status(r.status).json(r.body);
+    return;
+  }
+  res.json({ ok: true, variant, position: r.position, warnings: r.warnings });
 });
 
 app.get('/api/projects/:slug/render', (req, res) => {
@@ -1183,6 +1233,11 @@ app.get('/api/projects/:slug/render', (req, res) => {
     latest: latest ?? null,
     url: job.file ? `/media/${slug}/out/${encodeURIComponent(job.file)}` : undefined,
     editChangedSince: !!latestTime && mtime(file(slug, 'edit.json')) > latestTime,
+    preflighting: preflighting.has(renderKey(slug, variant)) || undefined,
+    // The critic's grade of the newest video (Instagram only), or checking while it runs.
+    verdict: variant === 'instagram' && latest ? readJson<Verdict | null>(verdictFile(file(slug, 'out/check'), latest), null) : null,
+    checking: variant === 'instagram' ? critics.has(slug) : false,
+    fixing: fixLoops.has(slug) || undefined,
   });
 });
 
@@ -1368,17 +1423,32 @@ export const askArgs = (slug: string, prompt: string, resume?: string) => {
   return args;
 };
 
-// "Check my video": measure + contact sheet, then Claude looks and answers in the Ask box.
+// "Check my video": measure + contact sheet, then a FRESH Claude grades it (server/critic.ts; the
+// builder is not the judge). The grade is saved next to the sheet and shown on the page; a short
+// plain line also goes into her Ask chat. If the critic fails, the old Ask-box check runs instead.
+const critics = new Set<string>();
 const startVideoCheck = async (slug: string, video: string, props: ReelProps) => {
+  if (critics.has(slug)) return;
+  critics.add(slug);
+  const checkDir = file(slug, 'out/check');
+  let report: Awaited<ReturnType<typeof checkVideo>> | null = null;
   try {
-    const report = await checkVideo(video, props, file(slug, 'out/check'));
+    report = await checkVideo(video, props, checkDir);
     writeJson(file(slug, 'out/check/last.json'), report);
-    if (asks.has(slug)) return; // she started her own question meanwhile
-    const sessionId = chat(slug).sessionId;
+    const lang = brandOf().language;
+    const v = await runCritic(report, props, { cwd: ROOT, language: lang });
+    saveVerdict(checkDir, v);
+    toolLog(slug, `\n== critic: ${v.verdict} ${v.score}/10, ${v.issues.length} issues, ${v.ms} ms\n`);
     pushChat(slug, { role: 'user', text: CHECK_ASK });
-    startAsk(slug, checkPrompt(report), { resume: sessionId });
+    pushChat(slug, { role: 'claude', text: verdictChat(v, lang) });
   } catch (e) {
     toolLog(slug, `\n== video check failed: ${(e as Error).message}\n`);
+    if (report && !asks.has(slug)) {
+      pushChat(slug, { role: 'user', text: CHECK_ASK });
+      startAsk(slug, checkPrompt(report), { resume: chat(slug).sessionId });
+    }
+  } finally {
+    critics.delete(slug);
   }
 };
 const CHECK_ASK = 'Check my finished video / Sprawdź mój gotowy film';
@@ -1533,8 +1603,8 @@ app.post('/api/projects/:slug/check', async (req, res) => {
     }
     return;
   }
-  if (asks.has(slug)) {
-    res.status(409).json({ code: 'busy', error: 'Claude is still working on your last request' });
+  if (critics.has(slug)) {
+    res.status(409).json({ code: 'busy', error: 'Claude is already checking this video' });
     return;
   }
   const latest = rendersOf(slug).find((r) => !isTikTokFile(r.file));
@@ -1546,7 +1616,7 @@ app.post('/api/projects/:slug/check', async (req, res) => {
   res.json({ ok: true });
 });
 
-const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried?: boolean }) => {
+const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried?: boolean; onDone?: (ok: boolean) => void }) => {
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY; // always her subscription, never API billing
   const child = track(spawnCmd(CLAUDE, askArgs(slug, prompt, opts.resume), { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] }));
@@ -1589,6 +1659,7 @@ const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried
     asks.delete(slug);
     if (answer.trim()) {
       pushChat(slug, { role: 'claude', text: answer.trim() });
+      opts.onDone?.(true);
       return;
     }
     // The saved conversation is gone (Claude Code cleans old ones): start a new one, once, with the
@@ -1601,7 +1672,7 @@ const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried
       const context = before.length
         ? `Earlier in this chat (for context):\n${before.map((m) => `${m.role === 'user' ? brandOf().name || 'User' : 'Claude'}: ${m.text}`).join('\n')}\n\nHer new message:\n`
         : '';
-      startAsk(slug, context + prompt, { retried: true });
+      startAsk(slug, context + prompt, { retried: true, onDone: opts.onDone });
       return;
     }
     const missing = /ENOENT/.test(errText);
@@ -1620,8 +1691,55 @@ const startAsk = (slug: string, prompt: string, opts: { resume?: string; retried
               ? 'Stopped.'
               : `Claude stopped (${errText.trim().split('\n').pop() || `exit ${code}`}).`,
     });
+    opts.onDone?.(false);
   });
 };
+
+// "Napraw to" / "Popraw i zrenderuj jeszcze raz": the critic's fixes go to the builder (her Ask
+// chat, which knows the reel). With rerender, the video is made again ONCE after the Ask turn, and
+// only if the edit really changed. That render is checked again but never loops by itself.
+const fixLoops = new Set<string>();
+app.post('/api/projects/:slug/critic/fix', (req, res) => {
+  const slug = req.params.slug;
+  const fixes = (Array.isArray(req.body?.fixes) ? req.body.fixes : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 8) as string[];
+  const rerender = req.body?.rerender === true;
+  if (!fixes.length) {
+    res.status(400).json({ error: 'No fix given' });
+    return;
+  }
+  if (asks.has(slug) || fixLoops.has(slug)) {
+    res.status(409).json({ code: 'busy', error: 'Claude is still working on your last request' });
+    return;
+  }
+  const pl = brandOf().language === 'pl';
+  const message =
+    fixes.length === 1 && !rerender
+      ? fixes[0]
+      : `${pl ? 'Popraw w filmie' : 'Fix in the video'}:\n${fixes.map((f) => `- ${f}`).join('\n')}`;
+  const before = mtime(file(slug, 'edit.json'));
+  pushChat(slug, { role: 'user', text: message });
+  const prompt = `${message}\n\n(These fixes come from a check of the finished video. Apply them in edit.json, run npm run check, and do not render the video${rerender ? ': Klipownia makes it again by itself when you are done' : ''}.)`;
+  if (rerender) fixLoops.add(slug);
+  startAsk(slug, prompt, {
+    resume: chat(slug).sessionId,
+    onDone: (ok) => {
+      if (!rerender) return;
+      void (async () => {
+        try {
+          if (!ok || mtime(file(slug, 'edit.json')) <= before) {
+            pushChat(slug, { role: 'claude', text: pl ? 'Nic się nie zmieniło w filmie, więc nie robię go jeszcze raz.' : 'Nothing changed in the edit, so I did not make the video again.' });
+            return;
+          }
+          const r = await queueRender(slug, 'instagram', { fromFix: true });
+          if (!r.ok) pushChat(slug, { role: 'error', code: 'ask_failed', text: `${pl ? 'Nie zacząłem nowego filmu' : 'The new video did not start'}: ${String(r.body.error ?? '')}` });
+        } finally {
+          fixLoops.delete(slug);
+        }
+      })();
+    },
+  });
+  res.json({ ok: true, rerender });
+});
 
 app.post('/api/projects/:slug/ask', (req, res) => {
   const slug = req.params.slug;
@@ -1924,7 +2042,7 @@ app.post('/api/projects/story', toTemp.single('audio'), (req, res) => {
   const script = String(req.body?.script ?? '').trim().slice(0, 6000);
   const language = SCRIPT_LANGS.has(req.body?.language) ? String(req.body.language) : 'pl';
   const voice = req.body?.voice === 'ai' ? 'ai' : 'own';
-  const background = ['cream', 'ink', 'accent'].includes(req.body?.background) ? req.body.background : 'cream';
+  const background = (STORY_BACKGROUNDS as readonly string[]).includes(req.body?.background) ? req.body.background : 'cream';
   const mode = req.body?.mode === 'product' ? 'product' : 'creator';
   if (!script) {
     drop();
@@ -2074,6 +2192,8 @@ for (const slug of resumeOrder) {
 }
 
 const server = app.listen(PORT, '127.0.0.1', () => console.log(`Klipownia is running: ${ORIGIN}`));
+// Build the video bundle soon after start, so the first look before a render takes seconds, not a minute.
+setTimeout(() => void getBundle().catch(() => {}), 8000).unref();
 
 // Stop every child with the server, so no tool keeps writing into a reel after a restart.
 const shutdown = (signal: NodeJS.Signals) => {

@@ -1,7 +1,7 @@
 // The checks for an edit, shared by `npm run check` (for Claude) and GET /api/projects/:slug/problems
 // (for the page, before "Make the video"). Each problem has a plain sentence for her and a technical
 // detail for Claude.
-import { HOOK_FONTS, LONG_KINDS, NEEDS_CUTOUT, SFX_NAMES, STORY_SKIP_KINDS, SUBTITLE_FONTS, type Edit, type StorySceneKind, type Word } from './types';
+import { HOOK_FONTS, LONG_KINDS, NEEDS_CUTOUT, SFX_NAMES, STORY_BACKGROUNDS, STORY_SKIP_KINDS, SUBTITLE_FONTS, type Edit, type StorySceneKind, type Word } from './types';
 import { isStory } from './story';
 
 const STORY_KINDS: StorySceneKind[] = ['title', 'words', 'list', 'photo', 'number', 'quote', 'compare', 'reels', 'screen', 'click', 'type', 'logos', 'price'];
@@ -110,7 +110,7 @@ export const checkEdit = (
   if (isStory(edit)) {
     const S = edit.story;
     if (!S) add({ code: 'bad_story', text: 'The scenes of this video are missing.', detail: 'format "story" needs edit.story (StorySettings)' });
-    if (S && !['cream', 'ink', 'accent'].includes(S.background)) add({ code: 'bad_story', text: 'The background colour is unknown.', detail: 'story.background must be cream, ink or accent' });
+    if (S && !(STORY_BACKGROUNDS as readonly string[]).includes(S.background)) add({ code: 'bad_story', text: 'The background colour is unknown.', detail: `story.background must be one of ${STORY_BACKGROUNDS.join(', ')}` });
     if (S && !S.scenes.length) add({ code: 'bad_story', text: 'This video has no scenes yet.', detail: 'story.scenes is empty' });
     const ids = new Set<string>();
     for (const [i, sc] of (S?.scenes ?? []).entries()) {

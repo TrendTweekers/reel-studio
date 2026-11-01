@@ -39,7 +39,30 @@ export type ProjectDetail = {
 export type ThumbnailState = { url: string | null; rendering: boolean; error: string | null };
 export type Problem = { code: string; text: string; detail?: string; effectId?: string };
 export type HistoryItem = { id: string; at: string; effects: number; seconds: number; by: 'page' | 'claude' | 'auto' };
-export type RenderState = { running: boolean; progress: number; file?: string; url?: string; error?: string; code?: string; stage?: string; editChangedSince?: boolean; stopped?: boolean; check?: 'started' | 'skipped' };
+// The look before a render (server/preflight.ts): hard items stop it, soft ones are only shown.
+export type PreflightItem = { level: 'hard' | 'soft'; code: string; text: string; vars?: Record<string, string> };
+export type Preflight = { ok: boolean; hard: PreflightItem[]; soft: PreflightItem[]; ms: number };
+// The fresh critic's grade of the newest video (server/critic.ts).
+export type VerdictIssue = { time: string; problem: string; fix: string };
+export type Verdict = { verdict: 'ship' | 'fix'; score: number; issues: VerdictIssue[]; summary: string; file: string; at: string };
+export type RenderState = {
+  running: boolean;
+  progress: number;
+  file?: string;
+  url?: string;
+  error?: string;
+  code?: string;
+  stage?: string;
+  editChangedSince?: boolean;
+  stopped?: boolean;
+  check?: 'started' | 'skipped';
+  warnings?: PreflightItem[];
+  preflighting?: boolean;
+  verdict?: Verdict | null;
+  checking?: boolean;
+  fixing?: boolean;
+  latest?: string | null;
+};
 export type Variant = 'instagram' | 'tiktok';
 export type FileItem = { file: string; url: string };
 export type SfxItem = { name: string; url: string };
@@ -124,7 +147,9 @@ export const api = {
   autoCheck: () => req<{ autoCheck: boolean }>('GET', '/api/settings/autocheck'),
   setAutoCheck: (on: boolean) => req<{ autoCheck: boolean }>('PUT', '/api/settings/autocheck', { autoCheck: on }),
   measureLight: (slug: string) => req<{ ok: boolean; light: NonNullable<Edit['light']> }>('POST', `/api/projects/${enc(slug)}/light`, {}),
-  startRender: (slug: string, variant: Variant = 'instagram') => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/render`, { variant }),
+  startRender: (slug: string, variant: Variant = 'instagram') => req<{ ok: boolean; warnings?: PreflightItem[] }>('POST', `/api/projects/${enc(slug)}/render`, { variant }),
+  preflight: (slug: string, variant: Variant = 'instagram') => req<Preflight>('POST', `/api/projects/${enc(slug)}/preflight`, { variant }),
+  criticFix: (slug: string, fixes: string[], rerender = false) => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/critic/fix`, { fixes, rerender }),
   renderState: (slug: string, variant: Variant = 'instagram') =>
     req<RenderState>('GET', `/api/projects/${enc(slug)}/render${variant === 'tiktok' ? '?variant=tiktok' : ''}`),
   split: (slug: string) => req<{ slugs: string[] }>('POST', `/api/projects/${enc(slug)}/split`, {}),

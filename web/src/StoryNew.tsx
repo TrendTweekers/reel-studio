@@ -4,6 +4,7 @@ import { api, HttpError, postForm, ServerDownError, type FileItem, type StoryMod
 import { errText, fmt, num, useT, type StrKey } from './i18n';
 import { go, TopRight } from './App';
 import { PictureGrid } from './PictureGrid';
+import { storySwatches } from './storyLooks';
 import { Chips, fmtTime } from './ui';
 
 // "Film z tekstu": a video with no camera. Topic -> Claude writes a script -> she edits it -> a voice
@@ -223,11 +224,7 @@ export function StoryNew({ mode: kind = 'creator' }: { mode?: StoryMode }) {
     [3, 'storyStep3'],
   ];
   const elapsed = writing ? Math.floor((Date.now() - writing) / 1000) : 0;
-  const swatches: { v: Background; color: string; label: StrKey }[] = [
-    { v: 'cream', color: '#f6f1ea', label: 'bgCream' },
-    { v: 'ink', color: '#1b1715', label: 'bgInk' },
-    { v: 'accent', color: accent, label: 'bgAccent' },
-  ];
+  const swatches = storySwatches(accent);
 
   return (
     <div className="home story-new">
