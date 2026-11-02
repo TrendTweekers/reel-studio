@@ -142,6 +142,8 @@ const stillTest = async (c: PreflightCtx, add: (i: PreflightItem) => void, out: 
   const inputProps = c.props as unknown as Record<string, unknown>;
   const id = isLong(c.props.edit) ? 'Long' : 'Reel';
   const browser = await openBrowser('chrome', { chromiumOptions: {} });
+  // A new project has no out/ yet: its first render must not fail here.
+  fs.mkdirSync(path.join(c.dir, 'out'), { recursive: true });
   const tmp = fs.mkdtempSync(path.join(c.dir, 'out', '.preflight-'));
   try {
     const comp = await selectComposition({ serveUrl, id, inputProps, puppeteerInstance: browser, logLevel: 'error' });

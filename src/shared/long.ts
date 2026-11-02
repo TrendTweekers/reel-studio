@@ -8,6 +8,11 @@ export const isLong = (edit: Pick<Edit, 'format'> | null | undefined) => edit?.f
 export const longSize = (edit: Pick<Edit, 'source'>) =>
   edit.source.width >= edit.source.height ? { width: 1920, height: 1080, wide: true } : { width: 1080, height: 1920, wide: false };
 
+// 4K only on a long video with quality '4k'. The composition stays 1920x1080; the render uses scale 2.
+export const is4k = (edit: Pick<Edit, 'format' | 'long'> | null | undefined) => isLong(edit) && edit?.long?.quality === '4k';
+// A source counts as 4K when its long side has 3000 px or more (3840x2160, 4096x2160, 2160x3840).
+export const FOURK_MIN_SIDE = 3000;
+
 export const defaultLong = (): LongSettings => ({ subtitles: false, chapterCards: true, chapters: [], zoomJumps: true });
 
 const hms = (s: number) => {

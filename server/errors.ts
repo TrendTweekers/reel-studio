@@ -30,6 +30,7 @@ export const PLAIN: Record<ErrorCode, string> = {
   tool_missing: RULES[1].text,
   parent_missing: 'The long video this clip was made from is gone, so this clip cannot play.',
   render_failed: 'The video could not be made. Try again, or ask Claude to look at it.',
+  not_4k: 'This video was not filmed in 4K, so it cannot be made in 4K. Make it in 1080p.',
   unknown: 'Something went wrong. Try again. If it happens again, ask Claude to look at it.',
 };
 

@@ -1046,6 +1046,7 @@ export function Editor({ slug }: { slug: string }) {
                 flush={flush}
                 onAsk={() => void askLong()}
                 askRunning={askRunning}
+                source4k={!!detail.source4k}
               />
               {groupHead('shorts')}
               <ShortsPanel
@@ -1079,6 +1080,7 @@ export function Editor({ slug }: { slug: string }) {
           {long && groupHead('finish')}
           <RenderPanel
             long={long}
+            fourK={long && edit.long?.quality === '4k'}
             slug={slug}
             jobs={{ instagram: igJob, tiktok: tkJob }}
             renders={detail.renders}

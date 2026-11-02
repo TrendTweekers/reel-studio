@@ -231,6 +231,7 @@ export function YoutubePanel({
   flush,
   onAsk,
   askRunning,
+  source4k,
 }: {
   slug: string;
   edit: Edit;
@@ -241,6 +242,7 @@ export function YoutubePanel({
   flush: () => Promise<void>;
   onAsk: () => void;
   askRunning: boolean;
+  source4k: boolean;
 }) {
   const { t } = useT();
   const long = { ...defaultLong(), ...(edit.long ?? {}) };
@@ -290,6 +292,17 @@ export function YoutubePanel({
         </div>
       </Group>
       <ThumbnailBlock slug={slug} edit={edit} change={change} step={step} bump={bump} currentSource={currentSource} flush={flush} />
+      <Group label={t('ytQuality')}>
+        {/* On only when the source is 4K; an old 4K edit on a 1080 source can still be turned off. */}
+        <Check
+          checked={long.quality === '4k'}
+          disabled={!source4k && long.quality !== '4k'}
+          label={t('yt4k')}
+          onChange={(v) => setLong({ quality: v ? '4k' : '1080' })}
+        />
+        <p className="muted small tight">{t('yt4kNote')}</p>
+        {!source4k && <p className="warn-text small">{t('yt4kNotSource')}</p>}
+      </Group>
     </Panel>
   );
 }

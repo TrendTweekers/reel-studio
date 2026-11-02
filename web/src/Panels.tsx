@@ -457,7 +457,7 @@ function JobBlock({ slug, job, label, primary }: { slug: string; job: RenderJob;
         </button>
       ) : (
         <div className="render-progress">
-          <div className="muted">{pct === 0 ? t('preparing') : r?.stage && /sound/i.test(r.stage) ? t('finishingSound') : t('making')}</div>
+          <div className="muted">{r?.stage && /4K copy/.test(r.stage) ? t('making4kCopy') : pct === 0 ? t('preparing') : r?.stage && /sound/i.test(r.stage) ? t('finishingSound') : t('making')}</div>
           <div className="bar big">
             <span style={{ width: `${pct}%` }} />
           </div>
@@ -587,8 +587,10 @@ export function RenderPanel({
   onCheck,
   onAsk,
   long,
+  fourK,
 }: {
   long?: boolean; // a long YouTube video: one job, no TikTok version
+  fourK?: boolean; // the long video is made in 4K (the button says so)
   slug: string;
   jobs: { instagram: RenderJob; tiktok: RenderJob };
   renders: RenderInfo[];
@@ -635,7 +637,7 @@ export function RenderPanel({
         </div>
       )}
       <div className="jobs">
-        <JobBlock slug={slug} job={jobs.instagram} label={long ? t('makeYoutube') : t('makeInstagram')} primary />
+        <JobBlock slug={slug} job={jobs.instagram} label={long ? (fourK ? `${t('makeYoutube')} 4K` : t('makeYoutube')) : t('makeInstagram')} primary />
         {!long && <JobBlock slug={slug} job={jobs.tiktok} label={t('makeTiktok')} primary={false} />}
       </div>
       {!long && <VerdictCard slug={slug} r={jobs.instagram.render} onAsk={onAsk} />}

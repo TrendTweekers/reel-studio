@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""normalize.py <project_dir> [--long | --story]  ->  proxy.mp4 (1080x1920, 30fps CFR, H.264, AAC 48k stereo) + audio16k.wav
+"""normalize.py <project_dir> [--long [--4k] | --story]  ->  proxy.mp4 (1080x1920, 30fps CFR, H.264, AAC 48k stereo) + audio16k.wav
 
 --long (a YouTube video): no crop. Wide sources become 1920x1080, tall ones 1080x1920 (fit + pad), and the
 picture is stored a little smaller (crf 21), because a 30 minute proxy at crf 18 would take several GB.
+
+--long --4k: the same chain at 3840x2160 (tall: 2160x3840), crf 20, into proxy4k.mp4 (no audio16k.wav).
+Only for a source with 3000 px or more on its long side; a smaller source is refused (an upscale is not 4K).
+The same -t as the 1080 proxy, so both copies have the same length and the same word times.
 
 Order of the video chain is always: fps -> scale/crop to 1080x1920 -> colour (HDR tone map). Doing the
 colour step last means it only touches 1080x1920 at 30 fps (about 5x faster than at 4K 60 fps).
@@ -196,6 +200,9 @@ def main():
         fail("usage: normalize.py <project_dir> [--long]")
     d = project_arg(sys.argv[1])
     long_video = "--long" in sys.argv[2:]
+    four_k = "--4k" in sys.argv[2:]
+    if four_k and not long_video:
+        fail("--4k is only for a long YouTube video (--long)")
     src = find_source(d)
     info = probe(src)
     if "--story" in sys.argv[2:]:
@@ -212,12 +219,16 @@ def main():
     if abs(rot) in (90, 270):
         dw, dh = dh, dw
     progress("probe", 1.0)
+    if four_k and max(dw, dh) < 3000:
+        fail(f"the source is not 4K ({dw}x{dh}); 4K needs a video filmed in 4K")
 
     # Geometry: cover-crop to 9:16. Landscape: crop around her face, not the centre.
     crop_x, crop_mode = None, "center"
     out_w, out_h = W, H
     if long_video:
         out_w, out_h = (1920, 1080) if dw >= dh else (1080, 1920)
+        if four_k:
+            out_w, out_h = out_w * 2, out_h * 2
         crop_mode = "none"
         geometry = (f"setsar=1,fps={FPS},scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
                     f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black")
@@ -248,8 +259,10 @@ def main():
         attempts.append(("none", f"{geometry},format=yuv420p", []))
     emit(info="video paths: " + ", ".join(a[0] for a in attempts) + f"; crop={crop_mode}")
 
-    proxy = os.path.join(d, "proxy.mp4")
-    tmp = os.path.join(d, "proxy.tmp.mp4")
+    out_name = "proxy4k.mp4" if four_k else "proxy.mp4"
+    proxy = os.path.join(d, out_name)
+    tmp = os.path.join(d, out_name.replace(".mp4", ".tmp.mp4"))
+    crf = "20" if four_k else "21" if long_video else "18"
     used, last_err = None, None
     for name, vf, gargs in attempts:
         for hw in ([hwaccel_args(), []] if hwaccel_args() else [[]]):
@@ -261,7 +274,7 @@ def main():
                      # Audio starts at 0 like the video: pads silence when the audio track starts late.
                      "-af", "aresample=async=1:first_pts=0",
                      "-r", str(FPS), "-fps_mode", "cfr",
-                     "-c:v", "libx264", "-crf", "21" if long_video else "18", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                     "-c:v", "libx264", "-crf", crf, "-preset", "veryfast", "-pix_fmt", "yuv420p",
                      # A keyframe every second: the editor and the render jump to cut points fast.
                      "-g", "30", "-keyint_min", "30", "-sc_threshold", "0",
                      "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
@@ -281,6 +294,12 @@ def main():
         fail(last_err or "proxy encode failed")
     os.replace(tmp, proxy)
     emit(info=f"video path used: {used}")
+    if four_k:  # the 1080 proxy keeps the speech audio; this copy is only for the render
+        pinfo = probe(proxy)
+        pv = [s for s in pinfo["streams"] if s["codec_type"] == "video"][0]
+        emit(done=True, proxy=out_name, duration=round(duration_of(pinfo), 3), sourceDuration=round(dur, 3),
+             width=pv["width"], height=pv["height"], fps=pv["avg_frame_rate"], tonemap=used)
+        return
 
     wav = os.path.join(d, "audio16k.wav")
     aargs = ["-i", proxy, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav]

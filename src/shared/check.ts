@@ -1,7 +1,7 @@
 // The checks for an edit, shared by `npm run check` (for Claude) and GET /api/projects/:slug/problems
 // (for the page, before "Make the video"). Each problem has a plain sentence for her and a technical
 // detail for Claude.
-import { HOOK_FONTS, LONG_KINDS, NEEDS_CUTOUT, SFX_NAMES, STORY_BACKGROUNDS, STORY_SKIP_KINDS, SUBTITLE_FONTS, type Edit, type StorySceneKind, type Word } from './types';
+import { HOOK_FONTS, LONG_KINDS, LONG_QUALITIES, NEEDS_CUTOUT, SFX_NAMES, STORY_BACKGROUNDS, STORY_SKIP_KINDS, SUBTITLE_FONTS, type Edit, type StorySceneKind, type Word } from './types';
 import { isStory } from './story';
 
 const STORY_KINDS: StorySceneKind[] = ['title', 'words', 'list', 'photo', 'number', 'quote', 'compare', 'reels', 'screen', 'click', 'type', 'logos', 'price'];
@@ -93,8 +93,12 @@ export const checkEdit = (
   }
   for (const k of Object.keys(edit.wordFixes ?? {}))
     if (!ctx.words[Number(k)]) add({ code: 'bad_fix', text: 'A word fix points to a word that is not there.', detail: `wordFixes: no word number ${k}` });
+  if (!isLong(edit) && (edit.long as { quality?: string } | undefined)?.quality === '4k')
+    add({ code: 'bad_long', text: '4K is only for a YouTube video.', detail: 'long.quality "4k" needs format "long"' });
   if (isLong(edit)) {
     const L = edit.long;
+    if (L?.quality !== undefined && !LONG_QUALITIES.includes(L.quality))
+      add({ code: 'bad_long', text: 'The video quality is unknown.', detail: `long.quality must be one of: ${LONG_QUALITIES.join(', ')}` });
     if (!L) add({ code: 'bad_long', text: 'The YouTube settings are missing.', detail: 'format "long" needs edit.long (LongSettings)' });
     for (const e of edit.effects ?? [])
       if (!LONG_KINDS.includes(e.kind)) add({ code: 'bad_long', text: `"${NICE[e.kind] ?? e.kind}" is not shown in a YouTube video.`, detail: `effect ${e.id}: a long video shows only ${LONG_KINDS.join(', ')}`, effectId: e.id });

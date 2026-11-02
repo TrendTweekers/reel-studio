@@ -255,7 +255,12 @@ export type LongSettings = {
   description?: string; // the YouTube description, without the chapter list (that is added from chapters)
   thumbnail?: { t: number; title?: string; accent?: string }; // t = source seconds of the frame
   retakes?: number; // how many repeated takes the first edit cut (for the "what I did" card)
+  // '4k' = render 3840x2160 (or 2160x3840) from proxy4k.mp4. Only for a source filmed in 4K; YouTube is
+  // the only place that shows it (Reels, TikTok and Shorts stay 1080).
+  quality?: LongQuality;
 };
+export type LongQuality = '1080' | '4k';
+export const LONG_QUALITIES: LongQuality[] = ['1080', '4k'];
 
 // Effects a long video can show. Others in edit.effects are ignored by the Long composition.
 export const LONG_KINDS: EffectKind[] = ['picture', 'label', 'zoom'];
@@ -340,6 +345,7 @@ export type ErrorCode =
   | 'tool_missing'
   | 'parent_missing'
   | 'render_failed'
+  | 'not_4k'
   | 'unknown';
 
 // status.json of a project. 'queued' = waiting for another reel; position 1 = next in line.

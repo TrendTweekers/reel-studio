@@ -6533,3 +6533,9 @@ input[type='range'] {
     z-index: 60;
   }
 }
+
+/* A switch that cannot be used now (e.g. 4K on a video not filmed in 4K). */
+.check.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

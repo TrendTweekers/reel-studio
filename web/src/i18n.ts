@@ -350,6 +350,7 @@ const en = {
   err_claude_missing: 'Claude Code is not installed. Start Klipownia from the Dock once to install it.',
   err_stopped: 'Stopped.',
   err_render_failed: 'The video could not be made.',
+  err_not_4k: 'This video was not filmed in 4K. Make it in 1080p.',
   err_picture_missing: 'A picture is missing from the board.',
   scrubber: 'Position in the video',
   sfx_double_click: 'Double click',
@@ -575,6 +576,11 @@ const en = {
   nameTagHere: 'Show at current time',
   nameTagRemove: 'Remove name tag',
   ytHint: 'The title, description and thumbnail you paste into YouTube. Nothing is posted for you.',
+  ytQuality: 'Quality',
+  yt4k: '4K',
+  yt4kNote: 'YouTube only. About 4 times longer to make and a 4 times bigger file. Needs a video filmed in 4K.',
+  yt4kNotSource: 'This video was not filmed in 4K, so 4K is off.',
+  making4kCopy: 'Making the 4K copy of the video…',
   ytAsk: 'Ask Claude to write chapters, title and description',
   ytAskMsg: 'Write the YouTube chapters, title and description for this video. Make the chapter titles short and clear and keep the title under 100 characters. Add a name tag with my name if there is none.',
   ytAskSent: 'Claude is writing. The page updates by itself.',
@@ -1306,6 +1312,7 @@ const pl: Record<StrKey, string> = {
   err_claude_missing: 'Claude Code nie jest zainstalowany. Uruchom raz Klipownię z Docka, żeby go zainstalować.',
   err_stopped: 'Zatrzymane.',
   err_render_failed: 'Nie udało się zrobić filmu.',
+  err_not_4k: 'To nagranie nie jest w 4K. Zrób film w 1080p.',
   err_picture_missing: 'Na tablicy brakuje zdjęcia.',
   scrubber: 'Miejsce w filmie',
   sfx_double_click: 'Podwójny klik',
@@ -1530,6 +1537,11 @@ const pl: Record<StrKey, string> = {
   nameTagHere: 'Pokaż w obecnym miejscu',
   nameTagRemove: 'Usuń podpis',
   ytHint: 'Tytuł, opis i miniatura do wklejenia na YouTube. Nic nie publikuje się samo.',
+  ytQuality: 'Jakość',
+  yt4k: '4K',
+  yt4kNote: 'Tylko YouTube. Render około 8 razy dłuższy, plik około 3 razy większy. Wymaga nagrania w 4K.',
+  yt4kNotSource: 'To nagranie nie jest w 4K, więc 4K jest wyłączone.',
+  making4kCopy: 'Robię kopię filmu w 4K…',
   ytAsk: 'Poproś Claude o rozdziały, tytuł i opis',
   ytAskMsg: 'Napisz rozdziały, tytuł i opis tego filmu na YouTube. Tytuły rozdziałów mają być krótkie i jasne, a tytuł krótszy niż 100 znaków. Dodaj też podpis z moim imieniem, jeśli go nie ma.',
   ytAskSent: 'Claude pisze. Strona odświeży się sama.',
@@ -1972,7 +1984,7 @@ export const plural = (n: number, lang: Lang, t: T, base: 'pause' | 'effect' | '
 // Server error codes -> plain words. Unknown codes fall back to the server text.
 const ERR_CODES = [
   'no_audio', 'bad_file', 'not_logged_in', 'claude_missing', 'stopped', 'render_failed', 'picture_missing',
-  'upload_incomplete', 'no_internet', 'disk_full', 'no_speech', 'tool_missing', 'parent_missing', 'unknown', 'ask_failed', 'busy', 'licence',
+  'upload_incomplete', 'no_internet', 'disk_full', 'no_speech', 'tool_missing', 'parent_missing', 'not_4k', 'unknown', 'ask_failed', 'busy', 'licence',
 ] as const;
 export const errText = (t: T, code: string | null | undefined, text?: string | null) =>
   code && (ERR_CODES as readonly string[]).includes(code) ? t(`err_${code}` as StrKey) : text ?? '';

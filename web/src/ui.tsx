@@ -42,10 +42,10 @@ export function Group({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-export function Check({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Check({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
-    <label className={`check ${checked ? 'on' : ''}`}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className={`check ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className="box" aria-hidden>
         {checked ? '✓' : ''}
       </span>

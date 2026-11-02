@@ -34,6 +34,7 @@ export type ProjectDetail = {
   parent?: string | null;
   format?: Format;
   mode?: StoryMode;
+  source4k?: boolean; // a long video filmed in 4K (long side 3000 px or more): the 4K switch works
 };
 // The YouTube thumbnail (long videos): covers/thumbnail.jpg, 1280x720.
 export type ThumbnailState = { url: string | null; rendering: boolean; error: string | null };

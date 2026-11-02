@@ -32,7 +32,7 @@ import { CAN_REVEAL, IS_WIN, addWinFfmpegToPath, claudeCommand, killTree, linkFi
 import { storyFirstEdit } from './storyedit';
 import { LAN_COOKIE, SCAN_PAGE, cookieOf, isLoopback, isPrivateV4, lanCookie, makeLan, ownIps, plainIp, sameToken } from './lan';
 import { qrSvg } from './qr';
-import { isLong, longSize } from '../src/shared/long';
+import { FOURK_MIN_SIDE, is4k, isLong, longSize } from '../src/shared/long';
 import type { ThumbnailProps } from '../src/shared/types';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -135,9 +135,12 @@ const plainOf = (e: unknown, fallback: ErrorCode = 'unknown') => {
 };
 
 // Runs one tool in tools/. Each tool prints JSON lines: {"step","progress"} ... {"done":true} or {"error"}.
-const runTool = (slug: string, tool: string, step: Step, args: string[] = [], python = PYTHON) =>
+// report: send progress there instead of status.json (the 4K copy runs on a ready project, and a
+// "normalize" status would make Home treat the project as not ready).
+const runTool = (slug: string, tool: string, step: Step, args: string[] = [], python = PYTHON, report?: (progress: number) => void) =>
   new Promise<void>((resolve, reject) => {
-    setStatus(slug, { step, progress: 0 });
+    if (report) report(0);
+    else setStatus(slug, { step, progress: 0 });
     // Own process group (Windows: a tree for taskkill), so stopping the server also stops the tool's ffmpeg.
     const p = track(spawnGroup(python, [path.join(ROOT, 'tools', `${tool}.py`), dir(slug), ...args], { cwd: ROOT, env: process.env }));
     let err = '';
@@ -151,7 +154,11 @@ const runTool = (slug: string, tool: string, step: Step, args: string[] = [], py
       for (const line of lines) {
         try {
           const m = JSON.parse(line);
-          if (typeof m.progress === 'number') setStatus(slug, { step, progress: Math.max(0, Math.min(1, m.progress)) });
+          if (typeof m.progress === 'number') {
+            const pr = Math.max(0, Math.min(1, m.progress));
+            if (report) report(pr);
+            else setStatus(slug, { step, progress: pr });
+          }
           if (m.error) lastError = String(m.error);
         } catch {
           /* not a progress line */
@@ -197,6 +204,28 @@ const probeSize = (p: string) =>
     f.on('error', () => resolve({ width: 1080, height: 1920 }));
   });
 const isLongProject = (slug: string) => meta(slug).format === 'long';
+
+// Is the source filmed in 4K? Probed once per source file (the project page asks often).
+const source4kCache = new Map<string, { key: number; ok: boolean; size: string }>();
+const sourceIs4k = (slug: string): { ok: boolean; size: string } => {
+  const src = sourceOf(slug);
+  if (!src) return { ok: false, size: '' };
+  const key = mtime(src);
+  const c = source4kCache.get(src);
+  if (c && c.key === key) return c;
+  let ok = false;
+  let size = '';
+  try {
+    size = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', src], { encoding: 'utf8', timeout: 15000 }).trim().split('\n')[0];
+    const [w, h] = size.split('x').map(Number);
+    ok = Math.max(w || 0, h || 0) >= FOURK_MIN_SIDE;
+  } catch {
+    /* no ffprobe or a broken file: not 4K */
+  }
+  const r = { key, ok, size };
+  source4kCache.set(src, r);
+  return r;
+};
 const isStoryProject = (slug: string) => meta(slug).format === 'story';
 
 // ---- Editing styles ----
@@ -357,7 +386,7 @@ const makeCutout = (slug: string) => toolJob(slug, 'cutout', 'cutout', 'Cut-out 
 const findCovers = (slug: string) => toolJob(slug, 'covers', 'cover_frames', 'Cover frames failed');
 
 // ---- Render ----
-type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean; check?: 'started' | 'skipped'; noCheck?: boolean; warnings?: PreflightItem[]; fromFix?: boolean };
+type RenderJob = { running: boolean; progress: number; file?: string; error?: string; code?: ErrorCode; stage?: string; queued?: boolean; position?: number; stopped?: boolean; check?: 'started' | 'skipped'; noCheck?: boolean; warnings?: PreflightItem[]; fromFix?: boolean; base?: number };
 const renders = new Map<string, RenderJob>();
 const cancels = new Set<() => void>();
 
@@ -450,7 +479,8 @@ const renderName = (slug: string, variant: RenderVariant = 'instagram') => {
       .trim() || slug;
   const d = new Date();
   const p2 = (n: number) => String(n).padStart(2, '0');
-  const suffix = variant === 'tiktok' ? ' TikTok' : isLongProject(slug) ? ' YouTube' : '';
+  const fourK = isLongProject(slug) && is4k(readJson<Edit | null>(file(slug, 'edit.json'), null));
+  const suffix = variant === 'tiktok' ? ' TikTok' : isLongProject(slug) ? `${fourK ? ' 4K' : ''} YouTube` : '';
   const base = `${title} ${p2(d.getDate())}.${p2(d.getMonth() + 1)} ${p2(d.getHours())}-${p2(d.getMinutes())}${suffix}`;
   let name = `${base}.mp4`;
   for (let i = 2; fs.existsSync(file(slug, `out/${name}`)); i++) name = `${base} (${i}).mp4`;
@@ -485,7 +515,11 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
   try {
     const { renderMedia, selectComposition, makeCancelSignal } = await import('@remotion/renderer');
     const serveUrl = await getBundle();
-    const inputProps = variantProps(slug, variant);
+    const props0 = variantProps(slug, variant);
+    // 4K: the same 1920x1080 composition drawn at scale 2, from the 4K copy (same times, same length).
+    const fourK = variant === 'instagram' && is4k(props0.edit);
+    if (fourK && !proxy4kReady(slug)) throw new Error(proxy4kErrors.get(slug) ?? 'The 4K copy of the video is missing');
+    const inputProps: ReelProps = fourK ? { ...props0, urls: { ...props0.urls, video: `${ORIGIN}/media/${slug}/proxy4k.mp4` } } : props0;
     const composition = await selectComposition({ serveUrl, id: isLong(inputProps.edit) ? 'Long' : 'Reel', inputProps });
     fs.mkdirSync(outDir, { recursive: true });
     job.stage = 'Making the video';
@@ -507,11 +541,17 @@ const doRender = async (slug: string, job: RenderJob, variant: RenderVariant = '
           // A slow or busy Mac must not fail the render: give each frame time and use half the cores.
           timeoutInMilliseconds: 120000,
           // A long YouTube video is 30x more frames: use more of the Mac (she waits for it anyway).
-          concurrency: isLong(inputProps.edit) ? '75%' : '50%',
+          // 4K: each tab holds 4x bigger frames, so fewer tabs keep the memory sane.
+          concurrency: fourK ? '50%' : isLong(inputProps.edit) ? '75%' : '50%',
           // The frame cache grows with the video length (2.7 GB at 15 min of a long video): keep it small.
+          // 4K keeps the same cap: a bigger one only added memory (measured 1.5 GB in the compositor).
           offthreadVideoCacheSizeInBytes: 768 * 1024 * 1024,
+          // 4K: x264 "medium" cannot keep up at 3840x2160 on a laptop, so raw frames pile up in ffmpeg
+          // (measured 1.9 GB). "veryfast" at crf 18 keeps up and still looks clean on YouTube.
+          ...(fourK ? { scale: 2, x264Preset: 'veryfast' as const } : {}),
           onProgress: ({ progress }) => {
-            job.progress = Math.min(0.98, progress);
+            const base = job.base ?? 0;
+            job.progress = Math.min(0.98, base + progress * (1 - base));
             const pct = Math.floor(job.progress * 100);
             if (pct !== savedPct) {
               savedPct = pct;
@@ -786,6 +826,8 @@ app.get('/api/projects/:slug', (req, res) => {
     range: m.range ?? null,
     format: m.format ?? 'reel',
     mode: m.story?.mode ?? null,
+    // Only a long video can be made in 4K, and only from a source filmed in 4K.
+    source4k: m.format === 'long' ? sourceIs4k(slug).ok : false,
   });
 });
 
@@ -1196,11 +1238,56 @@ const runPreflight = async (slug: string, variant: RenderVariant, fresh = false)
   return result;
 };
 
+// The 4K copy (proxy4k.mp4), made on demand before the first 4K render. Ready = newer than the
+// source and as long as the 1080 proxy (the cut times of both copies must be the same).
+const proxy4kErrors = new Map<string, string>();
+const proxy4kReady = (slug: string) => {
+  const p4 = file(slug, 'proxy4k.mp4');
+  const src = sourceOf(slug);
+  return fs.existsSync(p4) && fs.statSync(p4).size > 1000 && !!src && mtime(p4) >= mtime(src) && mtime(p4) >= mtime(file(slug, 'proxy.mp4'));
+};
+const queueProxy4k = (slug: string, job: RenderJob) => {
+  if (heavyQ.has(slug, 'proxy4k')) return;
+  proxy4kErrors.delete(slug);
+  heavyQ.push({
+    slug,
+    kind: 'proxy4k',
+    run: async () => {
+      job.queued = false;
+      job.stage = 'Making the 4K copy';
+      let saved = -1;
+      try {
+        await runTool(slug, 'normalize', 'normalize', ['--long', '--4k'], PYTHON, (p) => {
+          // The copy is the first part of the job: it fills the bar up to 30%, the render the rest.
+          job.progress = p * 0.3;
+          const pct = Math.floor(p * 100);
+          if (pct !== saved) {
+            saved = pct;
+            saveRenderState(slug, 'instagram', job);
+          }
+        });
+        const [a, b] = await Promise.all([probeDuration(file(slug, 'proxy4k.mp4')), probeDuration(file(slug, 'proxy.mp4'))]);
+        if (Math.abs(a - b) > 0.05) throw new Error(`4K copy length ${a} s differs from the proxy ${b} s`);
+        job.base = 0.3;
+      } catch (e) {
+        fs.rmSync(file(slug, 'proxy4k.mp4'), { force: true });
+        toolLog(slug, `\n== 4K copy failed\n${(e as Error).message}\n`);
+        proxy4kErrors.set(slug, `The 4K copy could not be made: ${(e as Error).message.split('\n')[0]}`);
+      } finally {
+        fs.rmSync(file(slug, 'proxy4k.tmp.mp4'), { force: true });
+      }
+    },
+  });
+};
+
 type QueueResult = { ok: true; position?: number; warnings: PreflightItem[] } | { ok: false; status: number; body: Record<string, unknown> };
 const queueRender = async (slug: string, variant: RenderVariant, opts: { noCheck?: boolean; fromFix?: boolean } = {}): Promise<QueueResult> => {
   const key = renderKey(slug, variant);
   if (renders.get(key)?.running || preflighting.has(key)) return { ok: false, status: 409, body: { code: 'busy', error: 'Already making this video' } };
   if (analyseQ.has(slug) || !fs.existsSync(file(slug, 'edit.json'))) return { ok: false, status: 409, body: BUSY };
+  const fourK = variant === 'instagram' && isLongProject(slug) && is4k(readJson<Edit | null>(file(slug, 'edit.json'), null));
+  if (fourK && !sourceIs4k(slug).ok)
+    return { ok: false, status: 409, body: { code: 'not_4k', error: `${PLAIN.not_4k} (source ${sourceIs4k(slug).size || 'unknown size'})` } };
   preflighting.add(key);
   let pf: Preflight;
   try {
@@ -1218,6 +1305,8 @@ const queueRender = async (slug: string, variant: RenderVariant, opts: { noCheck
   const job: RenderJob = { running: true, progress: 0, stage: 'Waiting', queued: true, noCheck: opts.noCheck, warnings: pf.soft, fromFix: opts.fromFix };
   renders.set(key, job);
   saveRenderState(slug, variant, job);
+  // The 4K copy goes first in the same line, so the render right after it finds it.
+  if (fourK && !proxy4kReady(slug)) queueProxy4k(slug, job);
   heavyQ.push({
     slug,
     kind: 'render',

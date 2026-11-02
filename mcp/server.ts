@@ -126,6 +126,7 @@ type Project = {
   renders: { file: string; createdAt: string; url: string }[];
   summary?: { pausesCut?: number; secondsSaved?: number; hook?: unknown; effects?: number } | null;
   parent?: string | null;
+  source4k?: boolean;
 };
 const getProject = async (slug: string) => {
   if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug)) throw new UserError(`"${slug}" is not a reel name. Call list_reels to see the names.`);
@@ -497,7 +498,7 @@ tool(
     if (isLong(e)) {
       const Lg = e.long;
       L.push(`FORMAT: long YouTube video (${e.source.width}x${e.source.height}). Only picture, label and zoom effects show. Use set_youtube / youtube_text / make_thumbnail.`);
-      L.push(`YouTube title: ${Lg?.title ? `"${Lg.title}"` : 'none'}; description: ${Lg?.description ? `${Lg.description.length} chars` : 'none'}; subtitles ${Lg?.subtitles ? 'on' : 'off'}, chapter cards ${Lg?.chapterCards ? 'on' : 'off'}, zoom jumps ${Lg?.zoomJumps ? 'on' : 'off'}; repeated takes cut: ${Lg?.retakes ?? 0}`);
+      L.push(`YouTube title: ${Lg?.title ? `"${Lg.title}"` : 'none'}; description: ${Lg?.description ? `${Lg.description.length} chars` : 'none'}; quality ${Lg?.quality === '4k' ? '4K' : '1080p'}${p.source4k ? ' (source is 4K)' : ' (source is not 4K)'}; subtitles ${Lg?.subtitles ? 'on' : 'off'}, chapter cards ${Lg?.chapterCards ? 'on' : 'off'}, zoom jumps ${Lg?.zoomJumps ? 'on' : 'off'}; repeated takes cut: ${Lg?.retakes ?? 0}`);
       L.push(`Chapters (source s -> video time): ${(Lg?.chapters ?? []).map((c) => `${c.at} s "${c.title}"`).join('; ') || 'none'}`);
       L.push(`Chapter list for YouTube:\n${chapterList(e) || '(not valid yet: 3 or more chapters, each 10 s or longer)'}`);
       L.push(Lg?.nameTag ? `Name tag: "${Lg.nameTag.name}"${Lg.nameTag.line ? ` / ${Lg.nameTag.line}` : ''} at ${Lg.nameTag.at} s for ${Lg.nameTag.duration} s` : 'Name tag: none');
@@ -936,7 +937,7 @@ const longOnly = async (slug: string) => {
 };
 tool(
   'set_youtube',
-  'Long YouTube video only: set chapters (replaces the list; at = source seconds, the first one at 0), the YouTube title (max 100 chars) and description (without the chapter list), the name tag (lower third: name, optional line, at source seconds, duration s; null removes it), and switches: subtitles (burned in, off by default), chapterCards (chapter title on screen), zoomJumps. Only the fields you send change.',
+  'Long YouTube video only: set chapters (replaces the list; at = source seconds, the first one at 0), the YouTube title (max 100 chars) and description (without the chapter list), the name tag (lower third: name, optional line, at source seconds, duration s; null removes it), and switches: subtitles (burned in, off by default), chapterCards (chapter title on screen), zoomJumps, and quality ("4k" = a 3840x2160 YouTube video, about 4x longer to make and 4x bigger; only when the source was filmed in 4K; "1080" = normal). Only the fields you send change.',
   {
     slug: slugArg,
     chapters: z.array(z.object({ at: z.number().min(0), title: z.string().min(1).max(80) })).optional(),
@@ -946,10 +947,12 @@ tool(
     subtitles: z.boolean().optional(),
     chapterCards: z.boolean().optional(),
     zoomJumps: z.boolean().optional(),
+    quality: z.enum(['1080', '4k']).optional(),
   },
   WRITE,
   async ({ slug, ...ch }) => {
-    await longOnly(slug);
+    const p = await longOnly(slug);
+    if (ch.quality === '4k' && !p.source4k) throw new UserError('This video was not filmed in 4K (its long side is under 3000 px), so it cannot be made in 4K. Keep quality "1080".');
     const { edit } = await mutate(slug, (e) => {
       const L = { ...e.long!, ...Object.fromEntries(Object.entries(ch).filter(([, v]) => v !== undefined)) };
       if (ch.chapters) L.chapters = [...ch.chapters].sort((a, b) => a.at - b.at).map((c) => ({ at: r2(c.at), title: c.title.trim() }));

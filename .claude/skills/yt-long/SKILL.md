@@ -16,6 +16,8 @@ Everything for YouTube is in `edit.long`:
 - `nameTag`: `{ "name": "<brand.name>", "line": "<short role, in brand.language>", "at": <source s>, "duration": 4 }` or null.
 - `subtitles` (burned in, default false), `chapterCards` (chapter title on screen), `zoomJumps`.
 - `thumbnail`: `{ "t": <source s>, "title": "max 5 words", "accent": "optional" }`.
+- `quality`: `"1080"` (default) or `"4k"`. Set `"4k"` only when the user asks AND the source is filmed in 4K
+  (`source4k: true` in `GET /api/projects/<slug>`). A 4K render takes about 4x longer and the file is 4x bigger.
 
 ## Steps
 
