@@ -578,7 +578,7 @@ const en = {
   ytHint: 'The title, description and thumbnail you paste into YouTube. Nothing is posted for you.',
   ytQuality: 'Quality',
   yt4k: '4K',
-  yt4kNote: 'YouTube only. About 4 times longer to make and a 4 times bigger file. Needs a video filmed in 4K.',
+  yt4kNote: 'YouTube only. About 8 times longer to make and a file about 3 times bigger. Needs a video filmed in 4K.',
   yt4kNotSource: 'This video was not filmed in 4K, so 4K is off.',
   making4kCopy: 'Making the 4K copy of the video…',
   ytAsk: 'Ask Claude to write chapters, title and description',
