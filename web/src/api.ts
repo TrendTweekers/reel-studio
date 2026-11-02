@@ -66,6 +66,8 @@ export type RenderState = {
 export type Variant = 'instagram' | 'tiktok';
 export type FileItem = { file: string; url: string };
 export type SfxItem = { name: string; url: string };
+// "Open on your phone" (server/lan.ts). On the phone itself only { remote: true, enabled: true }.
+export type LanState = { remote: boolean; enabled: boolean; port?: number; urls?: { ip: string; url: string }[]; failed?: { ip: string; code: string }[] };
 
 export class ServerDownError extends Error {}
 export class HttpError extends Error {
@@ -144,6 +146,10 @@ export const api = {
     req<{ editVersion: number }>('POST', `/api/projects/${enc(slug)}/autoedit`, { pauseGap }),
   cutout: (slug: string) => req<unknown>('POST', `/api/projects/${enc(slug)}/cutout`, {}),
   checkVideo: (slug: string) => req<{ ok: boolean }>('POST', `/api/projects/${enc(slug)}/check`, {}),
+  lan: () => req<LanState>('GET', '/api/settings/lan'),
+  setLan: (enabled: boolean) => req<LanState>('PUT', '/api/settings/lan', { enabled }),
+  rotateLan: () => req<LanState>('POST', '/api/settings/lan/rotate', {}),
+  lanQr: (ip: string) => `/api/settings/lan/qr.svg?ip=${enc(ip)}`,
   autoCheck: () => req<{ autoCheck: boolean }>('GET', '/api/settings/autocheck'),
   setAutoCheck: (on: boolean) => req<{ autoCheck: boolean }>('PUT', '/api/settings/autocheck', { autoCheck: on }),
   measureLight: (slug: string) => req<{ ok: boolean; light: NonNullable<Edit['light']> }>('POST', `/api/projects/${enc(slug)}/light`, {}),

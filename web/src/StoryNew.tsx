@@ -409,13 +409,20 @@ export function StoryNew({ mode: kind = 'creator' }: { mode?: StoryMode }) {
               ))}
             </div>
 
-            {mode === 'record' && (
-              <RecordOwn
-                script={script}
-                audio={ownAudio?.from === 'record' ? ownAudio : null}
-                onAudio={(file) => setOwnAudio(file ? { file, url: URL.createObjectURL(file), from: 'record' } : null)}
-              />
-            )}
+            {/* The microphone needs a secure page (https or localhost): on a phone over the Wi-Fi, a file instead. */}
+            {mode === 'record' &&
+              (window.isSecureContext ? (
+                <RecordOwn
+                  script={script}
+                  audio={ownAudio?.from === 'record' ? ownAudio : null}
+                  onAudio={(file) => setOwnAudio(file ? { file, url: URL.createObjectURL(file), from: 'record' } : null)}
+                />
+              ) : (
+                <>
+                  <p className="phone-note">{t('recNeedsComputer')}</p>
+                  <UploadOwn audio={ownAudio?.from === 'record' ? ownAudio : null} onAudio={(file) => setOwnAudio(file ? { file, url: URL.createObjectURL(file), from: 'record' } : null)} />
+                </>
+              ))}
             {mode === 'upload' && (
               <UploadOwn audio={ownAudio?.from === 'upload' ? ownAudio : null} onAudio={(file) => setOwnAudio(file ? { file, url: URL.createObjectURL(file), from: 'upload' } : null)} />
             )}

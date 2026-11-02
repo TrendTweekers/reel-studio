@@ -1,4 +1,24 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { api } from './api';
+
+// True when this page is open on a phone over the Wi-Fi (the server tells, by the address the
+// request came from). Asked once per page load.
+let phoneAsk: Promise<boolean> | null = null;
+export function useOnPhone() {
+  const [remote, setRemote] = useState(false);
+  useEffect(() => {
+    phoneAsk ??= api.lan().then(
+      (s) => s.remote,
+      () => ((phoneAsk = null), false),
+    );
+    let live = true;
+    void phoneAsk.then((r) => live && setRemote(r));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return remote;
+}
 
 export function Panel({ id, title, hint, children, aside }: { id: string; title: string; hint?: string; children: ReactNode; aside?: ReactNode }) {
   return (

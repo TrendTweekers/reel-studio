@@ -6,7 +6,7 @@ import { LicenceBanner } from './LicenceBanner';
 import { atHandle, useBrand } from './brand';
 import type { StyleItem } from './api';
 import { styleName } from './StylePanel';
-import { Check, HelpTip, Wordmark } from './ui';
+import { Check, HelpTip, useOnPhone, Wordmark } from './ui';
 
 const STEPS: Step[] = ['normalize', 'transcribe', 'faces', 'autoedit', 'ready'];
 // A video from text has no face to find. 'voice' (the computer voice reads the script) comes first,
@@ -59,6 +59,7 @@ const groupProjects = (list: ProjectSummary[]) => {
 export function Home() {
   const { t, lang } = useT();
   const { brand } = useBrand();
+  const onPhone = useOnPhone();
   // Which sections: filmed videos ("Twórcy"), product videos, or both (then with headers).
   const showCreator = brand.use !== 'product';
   const showProduct = brand.use !== 'creator';
@@ -104,6 +105,18 @@ export function Home() {
     api.look().then((r) => setLookDone(r.lookDone), () => {});
   }, []);
   const input = useRef<HTMLInputElement>(null);
+  // On a phone the upload bar and the "editing now" card sit below the fold: bring them into view.
+  const dropRef = useRef<HTMLDivElement>(null);
+  const workingRef = useRef<HTMLDivElement>(null);
+  const uploading = !!up;
+  useEffect(() => {
+    if (uploading) dropRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [uploading]);
+  const workingSlug = working?.slug;
+  const workingShown = !!workingSlug && !!projects?.some((p) => p.slug === workingSlug);
+  useEffect(() => {
+    if (workingShown) workingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [workingShown]);
   // The video she just dropped: open it by itself as soon as its first edit is ready.
   const justUploaded = useRef<string | null>(null);
 
@@ -196,6 +209,12 @@ export function Home() {
           </p>
         </div>
 
+        {onPhone && (
+          <div className="phone-hint" role="note">
+            <strong>{t('phoneHintTitle')}</strong>
+            <span>{t('phoneHintText')}</span>
+          </div>
+        )}
 
         {showCreator && (
           <section className="home-section creator-section">
@@ -229,8 +248,15 @@ export function Home() {
                 </span>
               </button>
             </div>
+            {/* At phone width: one big button that opens the camera roll (no dragging on a phone). */}
+            {!up && (
+              <button className="btn primary phone-pick" onClick={() => input.current?.click()}>
+                {t('phonePick')}
+              </button>
+            )}
             <div
-              className={`dropzone ${over ? 'over' : ''} ${up ? 'busy' : ''} ${long ? 'long' : ''}`}
+              ref={dropRef}
+              className={`dropzone ${over ? 'over' : ''} ${up ? 'busy' : ''} ${long ? 'long' : ''} ${err ? 'has-err' : ''}`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setOver(true);
@@ -320,7 +346,7 @@ export function Home() {
         )}
 
         {working && workingReel && workingReel.status.step !== 'ready' && workingReel.status.step !== 'error' && (
-          <div className="working-card" role="status">
+          <div className="working-card" role="status" ref={workingRef}>
             <div className="working-text">
               <h2 className="serif-title">{working.long ? t('workingTitleLong') : t('workingTitle')}</h2>
               <p>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BrandSettings } from '../../src/shared/types';
-import { api, HttpError, ServerDownError, type LicenceState, type UpdateState, type VoiceState } from './api';
+import { api, HttpError, ServerDownError, type LanState, type LicenceState, type UpdateState, type VoiceState } from './api';
 import { BUY_URL, RENEW_URL, setLicence } from './LicenceBanner';
 import { useBrand } from './brand';
 import { go, TopRight } from './App';
@@ -37,7 +37,7 @@ export function Settings({ section }: { section: string | null }) {
       <main className="story-main settings-main">
         <h1 className="serif-title story-h1">{t('settings')}</h1>
         <nav className="settings-nav" aria-label={t('settings')}>
-          {(['brand', 'language', 'voice', 'claude', 'licence', 'about'] as const).map((s) => (
+          {(['brand', 'language', 'voice', 'claude', 'phone', 'licence', 'about'] as const).map((s) => (
             <a key={s} href={`#/settings/${s}`} className={section === s ? 'on' : ''}>
               {t(`set_${s}` as StrKey)}
             </a>
@@ -54,6 +54,7 @@ export function Settings({ section }: { section: string | null }) {
           <p className="muted">{t('setupClaudeLead')}</p>
           <ClaudeCheck />
         </section>
+        <PhoneSection />
         <LicenceSection />
         <AboutSection />
       </main>
@@ -112,6 +113,79 @@ function BrandSection() {
           {t('setupAgain')}
         </a>
       </div>
+    </section>
+  );
+}
+
+// "Otwórz na telefonie": the switch, the QR code(s) with the address, a new code.
+function PhoneSection() {
+  const { t } = useT();
+  const [lan, setLan] = useState<LanState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // A new token changes the QR picture at the same address: a key forces the browser to fetch it.
+  const [qrKey, setQrKey] = useState(0);
+  useEffect(() => {
+    api.lan().then(setLan, () => setErr(t('serverDown')));
+  }, [t]);
+  const act = async (fn: () => Promise<LanState>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setLan(await fn());
+      setQrKey((k) => k + 1);
+    } catch (e) {
+      setErr(e instanceof ServerDownError ? t('serverDown') : e instanceof HttpError && e.status === 404 ? t('storyNeedsRestart') : t('setupSaveFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const urls = lan?.urls ?? [];
+  return (
+    <section className="story-card settings-card" id="set-phone">
+      <h2 className="serif-title">{t('lanTitle')}</h2>
+      <p className="muted">{t('lanLead')}</p>
+      {lan?.remote ? (
+        <p className="phone-note">{t('lanOnPhone')}</p>
+      ) : (
+        lan && (
+          <>
+            <Check checked={lan.enabled} onChange={(on) => void act(() => api.setLan(on))} label={t('lanSwitch')} />
+            {!lan.enabled && <p className="muted small">{t('lanOffNote')}</p>}
+            {lan.enabled && urls.length === 0 && <p className="error-text">{t('lanNoNetwork')}</p>}
+            {lan.enabled && urls.length > 0 && (
+              <>
+                <p className="lan-scan">{t('lanScan')}</p>
+                {urls.length > 1 && <p className="muted small">{t('lanSeveral')}</p>}
+                <div className="lan-codes">
+                  {urls.map((u) => (
+                    <figure className="lan-code" key={u.ip}>
+                      <img src={`${api.lanQr(u.ip)}&k=${qrKey}`} alt={u.url} width={200} height={200} />
+                      <figcaption>
+                        <span className="muted small">{t('lanOrType')}</span>
+                        <code className="lan-url">{u.url}</code>
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+                {(lan.failed ?? []).map((f) => (
+                  <p key={f.ip} className="error-text small">
+                    {fmt(t('lanFailed'), { ip: f.ip, code: f.code })}
+                  </p>
+                ))}
+                <p className="muted small">{t('lanFirewall')}</p>
+                <div className="story-actions">
+                  <button className="btn" onClick={() => void act(api.rotateLan)} disabled={busy}>
+                    {t('lanRotate')}
+                  </button>
+                  <span className="muted small">{t('lanRotateTip')}</span>
+                </div>
+              </>
+            )}
+          </>
+        )
+      )}
+      {err && <p className="error-text">{err}</p>}
     </section>
   );
 }
@@ -504,6 +578,9 @@ export function VoiceSettings() {
                 <button className="btn rec-btn on" onClick={rec.stop}>
                   <span className="rec-dot" aria-hidden /> {t('recStop')}
                 </button>
+              ) : !window.isSecureContext ? (
+                // The microphone needs a secure page: on a phone over the Wi-Fi, only a file.
+                <span className="phone-note">{t('recNeedsComputer')}</span>
               ) : (
                 <button
                   className="btn rec-btn"

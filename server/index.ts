@@ -30,6 +30,8 @@ import { findRetakes, longFirstEdit, subtract } from './longedit';
 import { herReels } from './reels';
 import { CAN_REVEAL, IS_WIN, addWinFfmpegToPath, claudeCommand, killTree, linkFile, revealFile, runCmdSync, spawnCmd, spawnGroup, venvPython } from './platform';
 import { storyFirstEdit } from './storyedit';
+import { LAN_COOKIE, SCAN_PAGE, cookieOf, isLoopback, isPrivateV4, lanCookie, makeLan, ownIps, plainIp, sameToken } from './lan';
+import { qrSvg } from './qr';
 import { isLong, longSize } from '../src/shared/long';
 import type { ThumbnailProps } from '../src/shared/types';
 
@@ -606,18 +608,51 @@ const statusOf = (slug: string): Status => clipStatus(slug) ?? status(slug);
 // ---- HTTP ----
 const app = express();
 
-// Security. The server listens on 127.0.0.1 only, so other computers cannot reach it. These checks
-// stop a website open in her browser from talking to it (cross-site requests, DNS rebinding):
-// the Host must be this computer, and a request from a browser must come from this page.
+// Security. The server listens on 127.0.0.1, so other computers cannot reach it, unless she turns
+// on "Telefon w tej samej sieci Wi-Fi" (server/lan.ts): then also on this computer's private LAN
+// addresses, and a phone needs the QR code's token. These checks stop a website open in her
+// browser from talking to it (cross-site requests, DNS rebinding): the Host must be this computer,
+// and a request from a browser must come from this page.
 const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
+const lan = makeLan({ settingsFile: SETTINGS, port: PORT, app });
+// The LAN address counts as this computer only while the switch is on.
+const isLocalHost = (h: string) => LOCAL_HOSTS.has(h) || lan.hosts().includes(h);
+const fromPhone = (req: express.Request) => !isLoopback(plainIp(req.socket.remoteAddress));
 app.use((req, res, next) => {
-  if (!LOCAL_HOSTS.has(String(req.headers.host ?? ''))) {
+  if (!fromPhone(req)) return next();
+  const ip = plainIp(req.socket.remoteAddress);
+  const { enabled, token } = lan.get();
+  // Off, or not a home/office network address: nothing from outside this computer.
+  if (!enabled || !token || (!isPrivateV4(ip) && !ownIps().has(ip))) {
+    res.status(403).type('text/plain').send('Forbidden');
+    return;
+  }
+  // First visit from the QR code: keep the token in a cookie, then a clean address.
+  const t = typeof req.query.t === 'string' ? req.query.t : null;
+  if (t !== null && (req.method === 'GET' || req.method === 'HEAD') && isLocalHost(String(req.headers.host ?? ''))) {
+    if (!sameToken(t, token)) {
+      res.status(403).type('html').send(SCAN_PAGE);
+      return;
+    }
+    res.setHeader('Set-Cookie', lanCookie(token));
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(302, '/');
+    return;
+  }
+  if (!sameToken(cookieOf(req, LAN_COOKIE), token)) {
+    res.status(403).type('html').send(SCAN_PAGE);
+    return;
+  }
+  next();
+});
+app.use((req, res, next) => {
+  if (!isLocalHost(String(req.headers.host ?? ''))) {
     res.status(403).send('Forbidden');
     return;
   }
   const origin = req.headers.origin;
   const site = req.headers['sec-fetch-site'];
-  const fromOtherSite = (origin && !LOCAL_HOSTS.has(origin.replace(/^https?:\/\//, ''))) || (site && site !== 'same-origin' && site !== 'none');
+  const fromOtherSite = (origin && !isLocalHost(origin.replace(/^https?:\/\//, ''))) || (site && site !== 'same-origin' && site !== 'none');
   if (fromOtherSite && ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/'))) {
     res.status(403).json({ error: 'Forbidden' });
     return;
@@ -1698,6 +1733,47 @@ app.get('/api/settings/update', async (_req, res) => {
   }
 });
 
+// "Open on your phone". Only this computer may turn it on or off, or see the token.
+const lanState = (req: express.Request) => {
+  if (fromPhone(req)) return { remote: true, enabled: true };
+  lan.reconcile();
+  const { enabled, token } = lan.get();
+  return {
+    remote: false,
+    enabled,
+    port: PORT,
+    urls: enabled && token ? lan.ips().map((ip) => ({ ip, url: `http://${ip}:${PORT}/?t=${token}` })) : [],
+    failed: lan.failed(),
+  };
+};
+const computerOnly = (req: express.Request, res: express.Response) => {
+  if (!fromPhone(req)) return true;
+  res.status(403).json({ code: 'computer_only', error: 'Only on the computer.' });
+  return false;
+};
+app.get('/api/settings/lan', (req, res) => res.json(lanState(req)));
+app.put('/api/settings/lan', (req, res) => {
+  if (!computerOnly(req, res)) return;
+  lan.setEnabled(req.body?.enabled === true);
+  res.json(lanState(req));
+});
+app.post('/api/settings/lan/rotate', (req, res) => {
+  if (!computerOnly(req, res)) return;
+  lan.rotate();
+  res.json(lanState(req));
+});
+app.get('/api/settings/lan/qr.svg', (req, res) => {
+  if (!computerOnly(req, res)) return;
+  const { enabled, token } = lan.get();
+  const ip = String(req.query.ip ?? lan.ips()[0] ?? '');
+  if (!enabled || !token || !lan.ips().includes(ip)) {
+    res.status(404).json({ code: 'not_found', error: 'The phone link is off.' });
+    return;
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('image/svg+xml').send(qrSvg(`http://${ip}:${PORT}/?t=${token}`));
+});
+
 app.get('/api/settings/autocheck', (_req, res) => {
   res.json({ autoCheck: settings().autoCheck !== false });
 });
@@ -2313,6 +2389,8 @@ for (const slug of resumeOrder) {
 }
 
 const server = app.listen(PORT, '127.0.0.1', () => console.log(`Klipownia is running: ${ORIGIN}`));
+// The phone listeners (only when she turned the switch on).
+lan.start();
 // Build the video bundle soon after start, so the first look before a render takes seconds, not a minute.
 setTimeout(() => void getBundle().catch(() => {}), 8000).unref();
 
@@ -2330,6 +2408,7 @@ const shutdown = (signal: NodeJS.Signals) => {
   }
   killAll('SIGTERM');
   server.close();
+  lan.close();
   setTimeout(() => {
     killAll('SIGKILL');
     process.exit(0);
